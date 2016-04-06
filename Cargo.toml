@@ -1,0 +1,7 @@
+[package]
+name = "usbtest"
+version = "0.1.0"
+authors = ["Blackhole16 <jaro.fietz@gmx.de>"]
+
+[dependencies]
+libusb = "0.2"
