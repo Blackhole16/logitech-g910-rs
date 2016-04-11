@@ -1,15 +1,35 @@
 extern crate libusb;
 
+mod print;
+
+use libusb::{Context, Device, DeviceDescriptor, ConfigDescriptor, DeviceHandle, LogLevel};
+
 fn main() {
-    let mut context = libusb::Context::new().unwrap();
+    let version = libusb::version();
+
+    println!("libusb v{}.{}.{}.{}{}", version.major(), version.minor(), version.micro(), version.nano(), version.rc().unwrap_or(""));
+
+    let mut context = match Context::new() {
+        Ok(c) => c,
+        Err(e) => panic!("Context::new(): {}", e)
+    };
+
+    context.set_log_level(LogLevel::Debug);
+    context.set_log_level(LogLevel::Info);
+    context.set_log_level(LogLevel::Warning);
+    context.set_log_level(LogLevel::Error);
+    context.set_log_level(LogLevel::None);
+
+    println!("has capability? {}", context.has_capability());
+    println!("has hotplug? {}", context.has_hotplug());
+    println!("has HID access? {}", context.has_hid_access());
+    println!("supports detach kernel driver? {}", context.supports_detach_kernel_driver());
 
     for mut device in context.devices().unwrap().iter() {
-        let device_desc = device.device_descriptor().unwrap();
+        print::print_all(&mut device);
 
-        println!("Bus {:03} Device {:03} ID {:04x}:{:04x}",
-            device.bus_number(),
-            device.address(),
-            device_desc.vendor_id(),
-            device_desc.product_id());
+        //if device_desc.vendor_id() == 1133 && device_desc.product_id() == 49963 {
+            //println!("{:?}", device.speed())
+        //}
     }
 }
