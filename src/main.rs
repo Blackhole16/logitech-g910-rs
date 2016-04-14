@@ -1,30 +1,23 @@
 extern crate libusb;
 
 mod print;
+mod utils;
 
 use libusb::{Context, Device, DeviceDescriptor, ConfigDescriptor, DeviceHandle, LogLevel};
 
 fn main() {
-    print::print_libusb();
-
-    let mut context = match Context::new() {
-        Ok(c) => c,
-        Err(e) => panic!("Context::new(): {}", e)
-    };
-
-    context.set_log_level(LogLevel::Debug);
-    context.set_log_level(LogLevel::Info);
-    context.set_log_level(LogLevel::Warning);
-    context.set_log_level(LogLevel::Error);
-    context.set_log_level(LogLevel::None);
-
-    print::print_context(&mut context);
-
-    for mut device in context.devices().unwrap().iter() {
-        print::print_everything(&mut device);
-
-        //if device_desc.vendor_id() == 1133 && device_desc.product_id() == 49963 {
-            //println!("{:?}", device.speed())
-        //}
+    let argv: Vec<String> = std::env::args().collect();
+    println!("{:?}", argv);
+    if argv.len() < 3 {
+        println!("usage: usbtest <vendor-id> <product-id>");
+        return;
     }
+
+    let vendor_id: u16 = argv[1].parse().unwrap();
+    let product_id: u16 = argv[2].parse().unwrap();
+    println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
+
+    let context = utils::get_context();
+
 }
+
