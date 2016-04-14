@@ -5,9 +5,7 @@ mod print;
 use libusb::{Context, Device, DeviceDescriptor, ConfigDescriptor, DeviceHandle, LogLevel};
 
 fn main() {
-    let version = libusb::version();
-
-    println!("libusb v{}.{}.{}.{}{}", version.major(), version.minor(), version.micro(), version.nano(), version.rc().unwrap_or(""));
+    print::print_libusb();
 
     let mut context = match Context::new() {
         Ok(c) => c,
@@ -20,13 +18,10 @@ fn main() {
     context.set_log_level(LogLevel::Error);
     context.set_log_level(LogLevel::None);
 
-    println!("has capability? {}", context.has_capability());
-    println!("has hotplug? {}", context.has_hotplug());
-    println!("has HID access? {}", context.has_hid_access());
-    println!("supports detach kernel driver? {}", context.supports_detach_kernel_driver());
+    print::print_context(&mut context);
 
     for mut device in context.devices().unwrap().iter() {
-        print::print_all(&mut device);
+        print::print_everything(&mut device);
 
         //if device_desc.vendor_id() == 1133 && device_desc.product_id() == 49963 {
             //println!("{:?}", device.speed())
