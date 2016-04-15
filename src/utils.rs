@@ -10,7 +10,10 @@ use libusb::{
     Error,
 };
 use std::time::Duration;
+use std::fmt::Display;
+use std::thread::sleep;
 
+#[derive(Debug)]
 pub struct Endpoint {
     config: u8,
     iface: u8,
@@ -18,6 +21,20 @@ pub struct Endpoint {
     address: u8,
     transfer_type: TransferType,
 }
+
+trait PrintResult {
+  fn to_string(&self) -> String;
+}
+
+impl<T> PrintResult for Result<T> where T: Display {
+  fn to_string(&self) -> String {
+    match *self {
+      Ok(ref x) => x.to_string(),
+      Err(ref e) => format!("{:?}", e)
+    }
+  }
+}
+
 
 pub fn get_context() -> Context {
     let mut context = match Context::new() {
@@ -62,16 +79,39 @@ pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: 
 
     if languages.len() > 0 {
         let lang = languages[0];
-        println!("Manufacturer: {}", try!(handle.read_manufacturer_string(lang, device_desc, timeout)));
-        println!("Product: {}", try!(handle.read_product_string(lang, device_desc, timeout)));
-        println!("Serial Number: {}", try!(handle.read_serial_number_string(lang, device_desc, timeout)));
+        println!("Manufacturer: {}", 
+                 handle.read_manufacturer_string(lang, device_desc, timeout).to_string());
+        println!("Product: {}", 
+                 handle.read_product_string(lang, device_desc, timeout).to_string());
+        println!("Serial Number: {}", 
+                 handle.read_serial_number_string(lang, device_desc, timeout).to_string());
     }
 
+
+    for endpoint in get_readable_endpoints(device, device_desc) {
+        println!("Got readable endpoint: {:?}", endpoint);
+        if endpoint.iface == 1 {
+            handle.kernel_driver_active(endpoint.iface).map(|b| println!("    Kernel driver active: {}", b));
+            read_endpoint(handle, &endpoint).unwrap();
+        }
+    }
+    println!("");
+    for endpoint in get_writable_endpoints(device, device_desc) {
+        println!("Got writable endpoint: {:?}", endpoint);
+    }
 
     return Ok(());
 }
 
 pub fn get_readable_endpoints(device: &mut Device, device_desc: &DeviceDescriptor) -> Vec<Endpoint> {
+    get_endpoints(device, device_desc, Direction::In)
+}
+
+pub fn get_writable_endpoints(device: &mut Device, device_desc: &DeviceDescriptor) -> Vec<Endpoint> {
+    get_endpoints(device, device_desc, Direction::Out)
+}
+
+pub fn get_endpoints(device: &mut Device, device_desc: &DeviceDescriptor, dir: Direction) -> Vec<Endpoint> {
     let mut endpoints = Vec::new();
     for i in 0..device_desc.num_configurations() {
         let config_desc = match device.config_descriptor(i) {
@@ -82,7 +122,7 @@ pub fn get_readable_endpoints(device: &mut Device, device_desc: &DeviceDescripto
         for interface in config_desc.interfaces() {
             for interface_desc in interface.descriptors() {
                 for endpoint_desc in interface_desc.endpoint_descriptors() {
-                    if endpoint_desc.direction() == Direction::In {
+                    if endpoint_desc.direction() == dir {
                         endpoints.push(Endpoint {
                             config: config_desc.number(),
                             iface: interface_desc.interface_number(),
@@ -95,6 +135,45 @@ pub fn get_readable_endpoints(device: &mut Device, device_desc: &DeviceDescripto
             }
         }
     }
-
     return endpoints;
+}
+
+fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
+    let s = Duration::from_secs(10);
+    let has_kernel_driver = match handle.kernel_driver_active(endpoint.iface) {
+        Ok(true) => {
+            handle.detach_kernel_driver(endpoint.iface);
+            true
+        },
+        _ => false
+    };
+    //try!(handle.reset());
+    println!("    Kernel driver active: {}", has_kernel_driver);
+    //sleep(s);
+    //try!(handle.release_interface(endpoint.iface));
+    println!("0");
+    try!(handle.claim_interface(endpoint.iface));
+    try!(handle.release_interface(endpoint.iface));
+    println!("1");
+    try!(handle.set_active_configuration(endpoint.config));
+    sleep(s);
+    println!("2");
+    try!(handle.set_alternate_setting(endpoint.iface, endpoint.setting));
+    println!("3");
+    sleep(s);
+
+    let timeout = Duration::from_secs(5);
+    //let mut vec = Vec::<u8>::with_capacity(256);
+    let mut buf = [0u8; 256];
+    println!("start reading {} bytes", buf.len());
+    match handle.read_interrupt(endpoint.address, &mut buf, timeout) {
+        Ok(len) => println!("Read {} bytes", len),
+        Err(e) => println!("Error reading bytes: {:?}", e)
+    }
+
+    let mut vec = Vec::with_capacity(256);
+    vec.extend_from_slice(&buf);
+
+    println!("read: {:?}", &vec);
+    return Ok(());
 }
