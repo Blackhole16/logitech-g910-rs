@@ -4,10 +4,20 @@ use libusb::{
     Device,
     DeviceDescriptor,
     DeviceHandle,
+    Direction,
+    TransferType,
     Result,
     Error,
 };
 use std::time::Duration;
+
+pub struct Endpoint {
+    config: u8,
+    iface: u8,
+    setting: u8,
+    address: u8,
+    transfer_type: TransferType,
+}
 
 pub fn get_context() -> Context {
     let mut context = match Context::new() {
@@ -59,4 +69,32 @@ pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: 
 
 
     return Ok(());
+}
+
+pub fn get_readable_endpoints(device: &mut Device, device_desc: &DeviceDescriptor) -> Vec<Endpoint> {
+    let mut endpoints = Vec::new();
+    for i in 0..device_desc.num_configurations() {
+        let config_desc = match device.config_descriptor(i) {
+            Ok(c) => c,
+            Err(_) => continue
+        };
+
+        for interface in config_desc.interfaces() {
+            for interface_desc in interface.descriptors() {
+                for endpoint_desc in interface_desc.endpoint_descriptors() {
+                    if endpoint_desc.direction() == Direction::In {
+                        endpoints.push(Endpoint {
+                            config: config_desc.number(),
+                            iface: interface_desc.interface_number(),
+                            setting: interface_desc.setting_number(),
+                            address: endpoint_desc.address(),
+                            transfer_type: endpoint_desc.transfer_type(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    return endpoints;
 }
