@@ -48,7 +48,7 @@ pub fn print_everything(device: &mut Device) {
         Err(e) => println!("Error accessing descriptor: {:?}", e),
     }
     println!("Config:");
-    print_configs(device, Some("    "));
+    print_configs(device, Some("    ")).unwrap();
     println!("");
 }
 

@@ -1,5 +1,4 @@
 use std::mem;
-use std::usize;
 
 #[derive(Debug)]
 #[repr(C, packed)]
@@ -29,7 +28,6 @@ impl PacketBytes {
         if bytes.len() < 64 {
             return None;
         }
-        let t = UrbType::from(0x43u8);
         // convert slice to static array
         let mut array = [0u8; 64];
         for (&x, p) in bytes.iter().zip(array.iter_mut()) {

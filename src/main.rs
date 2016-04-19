@@ -6,14 +6,11 @@ mod utils;
 mod replay;
 mod usb;
 
-use libusb::{Context, Device, DeviceDescriptor, ConfigDescriptor, DeviceHandle, LogLevel};
-
 use std::u16;
-use std::time::Duration;
 use std::path::Path;
 
 fn main() {
-    let mut cap = replay::getCapture(&Path::new("pcap/g602-handshake.pcap"));
+    let mut cap = replay::get_capture(&Path::new("pcap/g602-handshake.pcap"));
     replay::print(&mut cap);
 
 

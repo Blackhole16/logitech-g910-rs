@@ -2,7 +2,7 @@ use pcap::{Capture, Offline};
 use std::path::Path;
 use usb::{PacketBytes, Packet};
 
-pub fn getCapture(path: &Path) -> Capture<Offline> {
+pub fn get_capture(path: &Path) -> Capture<Offline> {
     return Capture::from_file(path).unwrap();
 }
 

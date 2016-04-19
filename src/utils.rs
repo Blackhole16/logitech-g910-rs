@@ -11,7 +11,6 @@ use libusb::{
 };
 use std::time::Duration;
 use std::fmt::Display;
-use std::thread::sleep;
 
 #[derive(Debug)]
 pub struct Endpoint {
@@ -141,7 +140,7 @@ pub fn get_endpoints(device: &mut Device, device_desc: &DeviceDescriptor, dir: D
 fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
     let has_kernel_driver = match handle.kernel_driver_active(endpoint.iface) {
         Ok(true) => {
-            handle.detach_kernel_driver(endpoint.iface);
+            try!(handle.detach_kernel_driver(endpoint.iface));
             true
         },
         _ => false
@@ -180,22 +179,40 @@ fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
 
     let mut buf = [0u8; 8];
     println!("start reading {} bytes", buf.len());
-    while match handle.read_interrupt(129, &mut buf, timeout) {
-        Ok(len) => { print!("read {} bytes: ", len); true },
-        Err(e) => { print!("ERROR reading: {:?}", e); false }
-    } {
-        println!("{}, {}, {}, {}, {}, {}, {}, {}", &buf[0], &buf[1], &buf[2], &buf[3], &buf[4], &buf[5], &buf[6], &buf[7]);
+    loop {
+        match handle.read_interrupt(129, &mut buf, timeout) {
+            Ok(len) => {
+                print!("read {} bytes: ", len);
+                println!("{:?}", buf);
+            },
+            Err(e) => {
+                print!("ERROR reading: {:?}", e);
+                break;
+            }
+        }
     }
 
-    handle.release_interface(endpoint.iface);
-    handle.release_interface(0);
+    match handle.release_interface(endpoint.iface) {
+        Err(e) => println!("Could not release iface {}: {}", endpoint.iface, e),
+        _ => {}
+    }
+    match handle.release_interface(0) {
+        Err(e) => println!("Could not release iface 0: {}", e),
+        _ => {}
+    }
 
     // reattach kernel driver(s)
     if has_kernel_driver {
-        handle.attach_kernel_driver(endpoint.iface);
+        match handle.attach_kernel_driver(endpoint.iface) {
+            Err(e) => println!("Error attaching kernel driver for iface {}: {}", endpoint.iface, e),
+            _ => {}
+        }
     }
     if has_kernel_driver0 {
-        handle.attach_kernel_driver(0);
+        match handle.attach_kernel_driver(0) {
+            Err(e) => println!("Error attaching kernel driver for iface 0: {}", e),
+            _ => {}
+        }
     }
     return Ok(());
 }
