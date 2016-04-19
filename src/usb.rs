@@ -24,17 +24,11 @@ pub struct PacketBytes {
 }
 
 impl PacketBytes {
-    pub fn from_bytes(bytes: &[u8]) -> Option<PacketBytes> {
+    pub fn from_bytes<'a>(bytes: &'a [u8]) -> Option<&'a PacketBytes> {
         if bytes.len() < 64 {
             return None;
         }
-        // convert slice to static array
-        let mut array = [0u8; 64];
-        for (&x, p) in bytes.iter().zip(array.iter_mut()) {
-            *p = x;
-        }
-        println!("{}", mem::size_of::<PacketBytes>());
-        return Some(unsafe { mem::transmute(array) });
+        Some(unsafe { mem::transmute(bytes.as_ptr()) })
     }
 }
 
@@ -66,7 +60,7 @@ impl Packet {
             return Err("Need at least 64 bytes to convert to PacketBytes");
         }
         return Ok(Packet {
-            id: unsafe { *(bytes[..8].as_ptr() as *const u64) },
+            id: unsafe { *(&bytes[0] as *const u8 as *const u64) },
             urb_type: UrbType::from(bytes[8]),
             transfer_type: TransferType::from(bytes[9]),
             direction: Direction::from((bytes[10] & 0x80) == 0x80),
@@ -100,6 +94,7 @@ impl From<u8> for UrbType {
             0x43u8 => UrbType::Complete,
             0x53u8 => UrbType::Submit,
             // TODO: std::convert::From must not fail
+            // greetings from https://github.com/rust-lang/rfcs/pull/1542
             _ => panic!("Unknown UrbType {}", byte),
         }
     }
@@ -116,6 +111,7 @@ impl From<u8> for TransferType {
             0x01 => TransferType::Interrupt,
             0x02 => TransferType::Control,
             // TODO: std::convert::From must not fail
+            // greetings from https://github.com/rust-lang/rfcs/pull/1542
             _ => panic!("Unknown TransferType {}", byte),
         }
     }
