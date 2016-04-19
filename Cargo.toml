@@ -5,3 +5,5 @@ authors = ["Blackhole16 <jaro.fietz@gmx.de>"]
 
 [dependencies]
 libusb = "0.2"
+pcap = "0.5.5"
+
