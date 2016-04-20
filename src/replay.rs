@@ -1,6 +1,6 @@
 use pcap::{Capture, Offline};
 use std::path::Path;
-use usb::{PacketBytes, Packet};
+use usb::Packet;
 
 pub fn get_capture(path: &Path) -> Capture<Offline> {
     return Capture::from_file(path).unwrap();
@@ -12,8 +12,6 @@ pub fn print(cap: &mut Capture<Offline>) {
         if packet.header.len < 64 {
             unreachable!();
         }
-        let pb = PacketBytes::from_bytes(&packet.data).unwrap();
-        println!("{:?}", pb);
         let p = Packet::from_bytes(&packet.data).unwrap();
         println!("{:?}", p);
 
