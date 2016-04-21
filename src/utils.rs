@@ -90,7 +90,9 @@ pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: 
     for endpoint in get_readable_endpoints(device, device_desc) {
         println!("Got readable endpoint: {:?}", endpoint);
         if endpoint.iface == 1 {
-            handle.kernel_driver_active(endpoint.iface).map(|b| println!("    Kernel driver active: {}", b));
+            if let Ok(b) = handle.kernel_driver_active(endpoint.iface){
+                println!("    Kernel driver active: {}", b);
+            }
             read_endpoint(handle, &endpoint).unwrap();
         }
     }
@@ -161,8 +163,10 @@ fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
     try!(handle.reset());
     for lang in handle.read_languages(timeout).unwrap() {
         println!("Got lang: {:?}", lang);
-        for i in 0..256u8 {
-            handle.read_string_descriptor(lang, 0u8, timeout).map(|s| println!("got desc {}: {}", i, s));
+        for i in 0...255u8 {
+            if let Ok(s) = handle.read_string_descriptor(lang, 0u8, timeout) {
+                println!("got desc {}: {}", i, s);
+            }
         }
     }
     println!("0");
