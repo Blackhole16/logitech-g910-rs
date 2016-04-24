@@ -139,24 +139,23 @@ pub fn get_endpoints(device: &mut Device, device_desc: &DeviceDescriptor, dir: D
     return endpoints;
 }
 
-fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
-    let has_kernel_driver = match handle.kernel_driver_active(endpoint.iface) {
+pub fn detach(handle: &mut DeviceHandle, iface: u8) -> Result<bool> {
+    match handle.kernel_driver_active(iface) {
         Ok(true) => {
-            try!(handle.detach_kernel_driver(endpoint.iface));
-            true
+            try!(handle.detach_kernel_driver(iface));
+            Ok(true)
         },
-        _ => false
-    };
+        _ => Ok(false)
+    }
+
+}
+
+fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
+    let has_kernel_driver = detach(handle, endpoint.iface).unwrap();
     println!("    Kernel driver active for iface {}: {}", endpoint.iface, has_kernel_driver);
     // we also need to be able to write to / read from interface 0, otherwise
     // set_active_configuration reports a busy device
-    let has_kernel_driver0 = match handle.kernel_driver_active(0) {
-        Ok(true) => {
-            handle.detach_kernel_driver(0);
-            true
-        },
-        _ => false
-    };
+    let has_kernel_driver0 = detach(handle, 0).unwrap();
     println!("    Kernel driver active for iface 0: {}", has_kernel_driver);
     
     let timeout = Duration::from_secs(1);

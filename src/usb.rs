@@ -1,4 +1,5 @@
 use std::mem;
+use libusb::Error;
 
 #[derive(Debug)]
 #[repr(C, packed)]
@@ -58,6 +59,9 @@ impl<'a> Packet<'a> {
     pub fn get_endpoint(&self) -> u8 {
         self.head.endpoint_direction & 0x7f
     }
+    pub fn get_endpoint_direction(&self) -> u8 {
+        self.head.endpoint_direction
+    }
     pub fn get_device(&self) -> u8 {
         self.head.device
     }
@@ -78,8 +82,8 @@ impl<'a> Packet<'a> {
     pub fn get_usec(&self) -> u32 {
         self.head.usec
     }
-    pub fn get_status(&self) -> u32 {
-        self.head.status
+    pub fn get_status(&self) -> UrbStatus {
+        UrbStatus::from(self.head.status)
     }
     pub fn get_length(&self) -> u32 {
         self.head.length
@@ -125,7 +129,7 @@ impl<'a> Packet<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UrbType {
     Submit, Complete
 }
@@ -142,7 +146,7 @@ impl From<u8> for UrbType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TransferType {
     Control, Isochronous, Bulk, Interrupt
 }
@@ -159,7 +163,7 @@ impl From<u8> for TransferType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Direction {
     In, Out
 }
@@ -170,6 +174,40 @@ impl From<bool> for Direction {
             true => Direction::In,
             false => Direction::Out
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum UrbStatus {
+    Success,
+    InProgress,
+    Pipe
+}
+
+impl From<u32> for UrbStatus {
+    fn from(i: u32) -> Self {
+        return match i {
+            0x00000000 => UrbStatus::Success,
+            0xffffffe0 => UrbStatus::Pipe,
+            0xffffff8d => UrbStatus::InProgress,
+            // TODO: std::convert::From must not fail
+            // greetings from https://github.com/rust-lang/rfcs/pull/1542
+            _ => panic!("Unkwnown UrbStatus {}", i)
+        }
+    }
+}
+
+impl PartialEq<Error> for UrbStatus {
+    fn eq(&self, err: &Error) -> bool {
+        match err {
+            &Error::Pipe => *self == UrbStatus::Pipe,
+            &Error::Io => false,
+            _ => panic!("Unknown UrbStatus {}", err)
+        }
+    }
+
+    fn ne(&self, err: &Error) -> bool {
+        ! (self == err)
     }
 }
 
