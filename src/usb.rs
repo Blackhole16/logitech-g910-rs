@@ -35,6 +35,7 @@ pub struct Packet<'a> {
     data: &'a [u8],
 }
 
+#[allow(unused)]
 impl<'a> Packet<'a> {
     pub fn from_bytes(bytes: &'a [u8]) -> Option<Packet> {
         if bytes.len() < 64 {
@@ -146,6 +147,7 @@ impl From<u8> for UrbType {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug, PartialEq)]
 pub enum TransferType {
     Control, Isochronous, Bulk, Interrupt

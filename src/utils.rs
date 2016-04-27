@@ -12,6 +12,7 @@ use libusb::{
 use std::time::Duration;
 use std::fmt::Display;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Endpoint {
     config: u8,
@@ -33,7 +34,6 @@ impl<T> PrintResult for Result<T> where T: Display {
     }
   }
 }
-
 
 pub fn get_context() -> Context {
     let mut context = match Context::new() {
@@ -68,6 +68,7 @@ pub fn open_device<'a>(context: &'a mut Context, vendor_id: &u16, product_id: &u
     return Err(Error::NoDevice);
 }
 
+#[allow(unused)]
 pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: &mut DeviceHandle) -> Result<()> {
     try!(handle.reset());
 
@@ -104,14 +105,17 @@ pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: 
     return Ok(());
 }
 
+#[allow(unused)]
 pub fn get_readable_endpoints(device: &mut Device, device_desc: &DeviceDescriptor) -> Vec<Endpoint> {
     get_endpoints(device, device_desc, Direction::In)
 }
 
+#[allow(unused)]
 pub fn get_writable_endpoints(device: &mut Device, device_desc: &DeviceDescriptor) -> Vec<Endpoint> {
     get_endpoints(device, device_desc, Direction::Out)
 }
 
+#[allow(unused)]
 pub fn get_endpoints(device: &mut Device, device_desc: &DeviceDescriptor, dir: Direction) -> Vec<Endpoint> {
     let mut endpoints = Vec::new();
     for i in 0..device_desc.num_configurations() {
@@ -150,6 +154,7 @@ pub fn detach(handle: &mut DeviceHandle, iface: u8) -> Result<bool> {
 
 }
 
+#[allow(unused)]
 fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
     let has_kernel_driver = detach(handle, endpoint.iface).unwrap();
     println!("    Kernel driver active for iface {}: {}", endpoint.iface, has_kernel_driver);

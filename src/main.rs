@@ -9,13 +9,15 @@ mod utils;
 mod replay;
 mod usb;
 
-use std::u16;
 use std::path::Path;
 
 fn main() {
     let mut cap = replay::get_capture(&Path::new("pcap/g602-handshake.pcap"));
     //replay::print(&mut cap);
-    cap.next();cap.next();cap.next();cap.next();cap.next();cap.next();
+    // first 6 packets are from wireshark
+    for _ in 0..6 {
+        cap.next().unwrap();
+    }
 
     //let argv: Vec<String> = std::env::args().collect();
     //println!("{:?}", argv);
@@ -29,12 +31,12 @@ fn main() {
     //println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
 
     let mut context = utils::get_context();
-    let (mut device, device_desc, mut handle) =
-        match utils::open_device(&mut context, &consts::vendor_id, &consts::product_id) {
+    let (_, _, mut handle) =
+        match utils::open_device(&mut context, &consts::VENDOR_ID, &consts::PRODUCT_ID) {
             Ok(t) => t,
             Err(e) => panic!("Error finding / opening device: {}", e),
     };
-    replay::replay(&mut device, &mut handle, &mut cap);
+    replay::replay(&mut handle, &mut cap).unwrap();
     //match utils::read_device(&mut device, &device_desc, &mut handle) {
         //Ok(_) => println!("Finished"),
         //Err(e) => panic!("Cannot read from Device: {}", e),

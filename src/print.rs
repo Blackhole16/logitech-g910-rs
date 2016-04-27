@@ -11,6 +11,8 @@ use libusb::{
     InterfaceDescriptor,
     EndpointDescriptor,
 };
+use pcap::{Capture, Offline};
+use usb::Packet;
 
 trait PrintPrefix {
     fn to_str(&self) -> &str;
@@ -25,11 +27,13 @@ impl <'a> PrintPrefix for Option<&'a str> {
     }
 }
 
+#[allow(unused)]
 pub fn print_libusb() {
     let version = libusb::version();
     println!("libusb v{}.{}.{}.{}{}", version.major(), version.minor(), version.micro(), version.nano(), version.rc().unwrap_or(""));
 }
 
+#[allow(unused)]
 pub fn print_context(context: &Context) {
     println!("has capability? {}", context.has_capability());
     println!("has hotplug? {}", context.has_hotplug());
@@ -37,6 +41,7 @@ pub fn print_context(context: &Context) {
     println!("supports detach kernel driver? {}", context.supports_detach_kernel_driver());
 }
 
+#[allow(unused)]
 pub fn print_everything(device: &mut Device) {
     println!("Device:");
     print_device(device, Some("    "));
@@ -52,12 +57,14 @@ pub fn print_everything(device: &mut Device) {
     println!("");
 }
 
+#[allow(unused)]
 pub fn print_device(device: &mut Device, prefix: Option<&str>) {
     println!("{}Bus: {}", prefix.to_str(), device.bus_number());
     println!("{}Address: {}", prefix.to_str(), device.address());
     println!("{}Speed: {:?}", prefix.to_str(), device.speed());
 }
 
+#[allow(unused)]
 pub fn print_descriptor(desc: &DeviceDescriptor, prefix: Option<&str>) {
     println!("{}UsbVersion: {}", prefix.to_str(), version_to_string(&desc.usb_version()));
     println!("{}DeviceVersion: {}", prefix.to_str(), version_to_string(&desc.device_version()));
@@ -71,6 +78,7 @@ pub fn print_descriptor(desc: &DeviceDescriptor, prefix: Option<&str>) {
     println!("{}NumConfigurations: {}", prefix.to_str(), desc.num_configurations());
 }
 
+#[allow(unused)]
 pub fn print_configs(device: &mut Device, prefix: Option<&str>) -> Result<()> {
     let desc = try!(device.device_descriptor());
     let num_config = desc.num_configurations();
@@ -81,6 +89,7 @@ pub fn print_configs(device: &mut Device, prefix: Option<&str>) -> Result<()> {
     return Ok(());
 }
 
+#[allow(unused)]
 pub fn print_config(config: &ConfigDescriptor, prefix: Option<&str>) {
     println!("{}Num: {}", prefix.to_str(), config.number());
     println!("{}MaxPower: {}", prefix.to_str(), config.max_power());
@@ -91,12 +100,14 @@ pub fn print_config(config: &ConfigDescriptor, prefix: Option<&str>) {
     print_interfaces(&mut config.interfaces(), Some(&(prefix.to_str().to_string() + "    ")));
 }
 
+#[allow(unused)]
 pub fn print_interfaces(interfaces: &mut Interfaces, prefix: Option<&str>) {
     for interface in interfaces {
         print_interface(&interface, prefix);
     }
 }
 
+#[allow(unused)]
 pub fn print_interface(interface: &Interface, prefix: Option<&str>) {
     println!("{}Number: {}", prefix.to_str(), interface.number());
     for if_desc in interface.descriptors() {
@@ -104,6 +115,7 @@ pub fn print_interface(interface: &Interface, prefix: Option<&str>) {
     }
 }
 
+#[allow(unused)]
 pub fn print_interface_descriptor(if_desc: &InterfaceDescriptor, prefix: Option<&str>) {
     println!("{}Number: {}", prefix.to_str(), if_desc.interface_number());
     println!("{}SettingNumber: {}", prefix.to_str(), if_desc.setting_number());
@@ -117,6 +129,7 @@ pub fn print_interface_descriptor(if_desc: &InterfaceDescriptor, prefix: Option<
     }
 }
 
+#[allow(unused)]
 pub fn print_endpoint(endpoint: &EndpointDescriptor, prefix: Option<&str>) {
     println!("{}Address: {}", prefix.to_str(), endpoint.address());
     println!("{}Number: {}", prefix.to_str(), endpoint.number());
@@ -128,7 +141,22 @@ pub fn print_endpoint(endpoint: &EndpointDescriptor, prefix: Option<&str>) {
     println!("{}Interval: {}", prefix.to_str(), endpoint.interval());
 }
 
+#[allow(unused)]
 fn version_to_string(v: &Version) -> String {
     let &Version(j, m, n) = v;
     return format!("v{}.{}.{}", j, m, n);
 }
+
+#[allow(unused)]
+pub fn print_cap(cap: &mut Capture<Offline>) {
+    while let Ok(packet) = cap.next() {
+        println!("Packet: {:?}", packet);
+        if packet.header.len < 64 {
+            unreachable!();
+        }
+        let p = Packet::from_bytes(&packet.data).unwrap();
+        println!("{:?}", p);
+
+    }
+}
+

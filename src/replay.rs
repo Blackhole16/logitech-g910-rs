@@ -1,11 +1,10 @@
-use pcap::{Capture, Offline, Activated};
+use pcap::{Capture, Offline};
 use std::path::Path;
-use libusb::{DeviceHandle, Result, Device, Error};
-use usb::{Packet, TransferType, UrbType, UrbStatus};
+use libusb::{DeviceHandle, Result, Error};
+use usb::{Packet, TransferType, UrbType};
 use std::time::Duration;
 use std::thread;
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
-use std::sync::Mutex;
 use utils;
 use consts;
 
@@ -13,19 +12,7 @@ pub fn get_capture(path: &Path) -> Capture<Offline> {
     return Capture::from_file(path).unwrap();
 }
 
-pub fn print(cap: &mut Capture<Offline>) {
-    while let Ok(packet) = cap.next() {
-        println!("Packet: {:?}", packet);
-        if packet.header.len < 64 {
-            unreachable!();
-        }
-        let p = Packet::from_bytes(&packet.data).unwrap();
-        println!("{:?}", p);
-
-    }
-}
-
-pub fn replay(device: &mut Device, handle: &mut DeviceHandle, cap: &mut Capture<Offline>) -> Result<()> {
+pub fn replay(handle: &mut DeviceHandle, cap: &mut Capture<Offline>) -> Result<()> {
     let mut claimed = Vec::new();
     let mut listening = Vec::new();
 
@@ -36,7 +23,7 @@ pub fn replay(device: &mut Device, handle: &mut DeviceHandle, cap: &mut Capture<
     let mut buf = Vec::new();
     let mut read;
     let (tx, rx) = channel();
-    for l in stdin.lock().lines() {
+    for _ in stdin.lock().lines() {
         // check for channel messages
         while let Ok((read, buf)) = rx.try_recv() {
             println!("received {}: {:?}", read, buf);
@@ -66,7 +53,7 @@ pub fn replay(device: &mut Device, handle: &mut DeviceHandle, cap: &mut Capture<
                     }
                     buf.resize(req.get_w_length() as usize, 0u8);
                     read = handle.read_control(
-                            req.get_bm_request_type() | 0x80u8,
+                            bm_request_type,
                             req.get_b_request(),
                             req.get_value(),
                             req.get_language_id(),
@@ -108,16 +95,18 @@ pub fn replay(device: &mut Device, handle: &mut DeviceHandle, cap: &mut Capture<
 
     // stop threads
     for &(_, ref ltx, _) in listening.iter() {
-        ltx.send(());
+        // TODO: tell main-thread that a child-thread has died and remove from listening
+        //   otherwise this unwrap fails
+        ltx.send(()).unwrap();
     }
     for (t, _, _) in listening {
-        t.join();
+        t.join().unwrap();
     }
 
     for (iface, has_kernel_driver) in claimed {
-        handle.release_interface(iface);
+        handle.release_interface(iface).unwrap();
         if has_kernel_driver {
-            handle.attach_kernel_driver(iface);
+            handle.attach_kernel_driver(iface).unwrap();
         }
     }
     Ok(())
@@ -128,8 +117,8 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
     let mut context = utils::get_context();
     let (_,_,mut handle) = utils::open_device(
         &mut context,
-        &consts::vendor_id,
-        &consts::product_id
+        &consts::VENDOR_ID,
+        &consts::PRODUCT_ID
     ).unwrap();
     println!("Claiming interface {}", endpoint);
     // detch kernel driver
@@ -154,7 +143,7 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
             Ok(len) => {
                 println!("Read interrupt {} bytes: {:?}", len, buf);
                 println!("sending to main...");
-                tx.send((len, buf));
+                tx.send((len, buf)).unwrap();
             },
             Err(Error::Timeout) => {},
             Err(err) => {
