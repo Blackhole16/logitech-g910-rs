@@ -1,7 +1,7 @@
 use pcap::{Capture, Offline};
 use std::path::Path;
 use libusb::{DeviceHandle, Result, Error};
-use usb::{Packet, TransferType, UrbType};
+use usb::{Packet, TransferType, UrbType, Direction};
 use std::time::Duration;
 use std::thread;
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
@@ -23,7 +23,9 @@ pub fn replay(handle: &mut DeviceHandle, cap: &mut Capture<Offline>) -> Result<(
     let mut buf = Vec::new();
     let mut read;
     let (tx, rx) = channel();
-    for _ in stdin.lock().lines() {
+    //for _ in stdin.lock().lines() {
+    for i in 0.. {
+        println!("{}:", i);
         // check for channel messages
         while let Ok((read, buf)) = rx.try_recv() {
             println!("received {}: {:?}", read, buf);
@@ -45,21 +47,28 @@ pub fn replay(handle: &mut DeviceHandle, cap: &mut Capture<Offline>) -> Result<(
             // replay
             match req.get_transfer_type() {
                 TransferType::Control => {
-                    println!("Writing control packet...");
-                    let mut bm_request_type = req.get_bm_request_type();
-                    if bm_request_type & 0x80u8 != 0x80u8 {
-                        println!("Corrected incorrect(?) Direction byte {}", bm_request_type);
-                        bm_request_type |= 0x80u8;
-                    }
                     buf.resize(req.get_w_length() as usize, 0u8);
-                    read = handle.read_control(
-                            bm_request_type,
-                            req.get_b_request(),
-                            req.get_value(),
-                            req.get_language_id(),
-                            &mut buf,
-                            timeout
-                    );
+                    if req.get_direction() == Direction::In {
+                        println!("Reading control packet...");
+                        read = handle.read_control(
+                                req.get_bm_request_type(),
+                                req.get_b_request(),
+                                req.get_value(),
+                                req.get_language_id(),
+                                &mut buf,
+                                timeout
+                        );
+                    } else {
+                        println!("Writing control packet...");
+                        read = handle.write_control(
+                                req.get_bm_request_type(),
+                                req.get_b_request(),
+                                req.get_value(),
+                                req.get_language_id(),
+                                &mut buf,
+                                timeout
+                        );
+                    }
                 },
                 TransferType::Interrupt => {
                     println!("Writing interrupt packet...");
@@ -77,18 +86,28 @@ pub fn replay(handle: &mut DeviceHandle, cap: &mut Capture<Offline>) -> Result<(
             }
             match read {
                 Ok(ref len) => if *len == buf.len() {
-                    println!("Read {} bytes: {:?}", len, buf);
+                    println!("Read {} bytes", len);
                 } else {
-                    println!("Read {} bytes, but requested {}: {:?}", len, buf.len(), &buf[..*len]);
+                    println!("Read {} bytes, but requested {}", len, buf.len());
                 },
                 Err(ref err) => println!("Error: {:?}", err)
             }
         }
         {
             let res = Packet::from_bytes(cap.next().unwrap().data).unwrap();
+            let correct;
             match read {
-                Ok(len) => println!("Result correct: {}", res.get_data() == &buf[..len]),
-                Err(err) => println!("{}, expected {:?}, correct: {}", err, res.get_status(), res.get_status() == err)
+                Ok(len) => {
+                    correct = res.get_data() == &buf[..len];
+                    println!("Result correct: {}", correct);
+                }
+                Err(err) => {
+                    correct = res.get_status() == err;
+                    println!("{}, expected {:?}, correct: {}", err, res.get_status(), correct);
+                }
+            }
+            if !correct {
+                break;
             }
         }
     }
@@ -124,7 +143,6 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
     // detch kernel driver
     let has_kernel_driver = utils::detach(&mut handle, endpoint).unwrap();
     println!("had kernel driver: {}", has_kernel_driver);
-    handle.claim_interface(0).unwrap();
     handle.claim_interface(endpoint).unwrap();
     loop {
         // check if need to stop
