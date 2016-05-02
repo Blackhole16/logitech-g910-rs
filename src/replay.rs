@@ -13,7 +13,7 @@ use consts;
 
 struct Child {
     endpoint: u8,
-    thread: Option<JoinHandle<()>>,
+    thread: JoinHandle<()>,
     tx: Sender<()>,
 }
 
@@ -21,7 +21,7 @@ impl Child {
     fn new(thread: JoinHandle<()>, tx: Sender<()>, endpoint: u8) -> Child {
         Child {
             endpoint: endpoint,
-            thread: Some(thread),
+            thread: thread,
             tx: tx,
         }
     }
@@ -47,8 +47,8 @@ struct Replay<'a> {
     handshake_done: bool,
     listening: Vec<Child>,
     claimed: Vec<Claim>,
-    tx: Sender<Result<(usize, Vec<u8>), (u8, Error)>>,
-    rx: Receiver<Result<(usize, Vec<u8>), (u8, Error)>>,
+    tx: Sender<Result<Vec<u8>, (u8, Error)>>,
+    rx: Receiver<Result<Vec<u8>, (u8, Error)>>,
 }
 
 impl<'a> Replay<'a> {
@@ -138,8 +138,8 @@ impl<'a> Drop for Replay<'a> {
             //   otherwise this unwrap fails
             child.tx.send(()).unwrap();
         }
-        for child in self.listening.iter_mut() {
-            child.thread.take().unwrap().join().unwrap();
+        for child in self.listening.drain(..) {
+            child.thread.join().unwrap();
         }
 
         for claim in self.claimed.iter() {
@@ -187,10 +187,10 @@ impl<'a> Control<'a> {
             // check for channel messages
             while let Ok(res) = self.replay.rx.try_recv() {
                 match res {
-                    Ok((read, buf)) => {
-                        println!("received {}: {:?}", read, buf);
+                    Ok(buf) => {
+                        println!("received {}: {:?}", buf.len(), buf);
                         let res = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
-                        println!("Correct: {}", &buf[..read] == res.get_data());
+                        println!("Correct: {}", buf == res.get_data());
                     },
                     Err((endpoint, e)) => {
                         println!("Got error from child thread: {}", e);
@@ -263,7 +263,7 @@ fn get_handle<'a>(context: &'a mut Context) -> DeviceHandle<'a> {
 }
 
 fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receiver<()>,
-                  tx: Sender<Result<(usize, Vec<u8>), (u8, Error)>>) {
+                  tx: Sender<Result<Vec<u8>, (u8, Error)>>) {
     let timeout = Duration::from_secs(1);
     let mut context = utils::get_context();
     let mut handle = get_handle(&mut context);
@@ -300,9 +300,10 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
                 timeout
         ){
             Ok(len) => {
+                buf.resize(len, 0u8);
                 println!("Read interrupt {} bytes: {:?}", len, buf);
                 println!("sending to main...");
-                tx.send(Ok((len, buf))).unwrap();
+                tx.send(Ok(buf)).unwrap();
             },
             Err(Error::Timeout) => {},
             Err(err) => {
