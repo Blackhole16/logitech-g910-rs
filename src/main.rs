@@ -14,7 +14,7 @@ use replay::Control;
 
 fn main() {
     let mut context = utils::get_context();
-    let mut ctrl = Control::new(&Path::new("pcap/g602-handshake.pcap"), &mut context);
+    let mut ctrl = Control::new(&Path::new("pcap/g910-handshake.pcap"), &mut context);
     // first 6 packets are from wireshark
     ctrl.skip(6);
 

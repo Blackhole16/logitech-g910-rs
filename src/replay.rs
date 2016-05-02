@@ -1,6 +1,6 @@
 use pcap::{Capture, Offline};
 use std::path::Path;
-use libusb::{DeviceHandle, Result as UsbResult, Error, Context};
+use libusb::{DeviceHandle, Result as UsbResult, Error as UsbError, Context};
 use usb::{Packet, TransferType, UrbType, Direction};
 use std::time::Duration;
 use std::thread;
@@ -10,6 +10,21 @@ use std::io;
 use std::io::BufRead;
 use utils;
 use consts;
+
+enum ReplayResponse {
+    Success { buf: Vec<u8>, req_len: usize },
+    Dropped,
+    ThreadStarted,
+    InProgress,
+}
+
+enum ReplayCompare {
+    Correct,
+    Dropped,
+    Incorrect,
+    ThreadStarted,
+    InProgress,
+}
 
 struct Child {
     endpoint: u8,
@@ -47,14 +62,14 @@ struct Replay<'a> {
     handshake_done: bool,
     listening: Vec<Child>,
     claimed: Vec<Claim>,
-    tx: Sender<Result<Vec<u8>, (u8, Error)>>,
-    rx: Receiver<Result<Vec<u8>, (u8, Error)>>,
+    tx: Sender<Result<Vec<u8>, (u8, UsbError)>>,
+    rx: Receiver<Result<Vec<u8>, (u8, UsbError)>>,
 }
 
 impl<'a> Replay<'a> {
-    pub fn replay_packet(&mut self, req: Packet) -> UsbResult<Option<Vec<u8>>> {
+    pub fn replay_packet(&mut self, req: Packet) -> UsbResult<ReplayResponse> {
         if req.get_urb_type() != UrbType::Submit {
-            return Err(Error::InvalidParam);
+            return Err(UsbError::InvalidParam);
         }
         let timeout = Duration::from_secs(1);
         let mut buf = Vec::new();
@@ -101,19 +116,21 @@ impl<'a> Replay<'a> {
                     let (ltx, lrx) = channel();
                     let t = thread::spawn(move || read_interrupt(endpoint, endpoint_direction, len, lrx, tx));
                     self.listening.push(Child::new(t, ltx, req.get_endpoint_direction()));
+                    return Ok(ReplayResponse::ThreadStarted);
+                } else {
+                    return Ok(ReplayResponse::InProgress);
                 }
-                return Ok(None);
             }
             _ => unimplemented!()
         }
         match read {
             Ok(len) => if len == buf.len() {
-                return Ok(Some(buf));
+                Ok(ReplayResponse::Success{ buf: buf, req_len: len })
             } else {
                 buf.resize(len, 0u8);
-                return Ok(Some(buf));
+                Ok(ReplayResponse::Success{ buf: buf, req_len: len })
             },
-            Err(err) => return Err(err)
+            Err(err) => Err(err)
         }
     }
 
@@ -177,27 +194,85 @@ impl<'a> Control<'a> {
             self.cap.next().unwrap();
         }
     }
+
+    fn replay_next(&mut self) -> UsbResult<ReplayResponse> {
+        let &mut Control { ref mut cap, ref mut replay } = self;
+        let req = Packet::from_bytes(cap.next().unwrap().data).unwrap();
+        if req.get_urb_type() != UrbType::Submit {
+            println!("dropped (incorrect?) packet: {:?}", req);
+            return Ok(ReplayResponse::Dropped);
+        }
+        replay.replay_packet(req)
+    }
+
+    fn compare_next(&mut self, res: UsbResult<ReplayResponse>) -> UsbResult<ReplayCompare> {
+        let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
+        match res {
+            Ok(replay_response) => {
+                match replay_response {
+                    ReplayResponse::Success{ buf, req_len } => {
+                        let correct = expected.get_data() == &buf[..];
+                        if req_len != buf.len() {
+                            println!("Requested {} but only received {}", req_len, buf.len());
+                        }
+                        println!("Result correct: {}", correct);
+                        if correct {
+                            Ok(ReplayCompare::Correct)
+                        } else {
+                            Ok(ReplayCompare::Incorrect)
+                        }
+                    },
+                    ReplayResponse::Dropped => {
+                        println!("Packet dropped");
+                        Ok(ReplayCompare::Dropped)
+                    }
+                    ReplayResponse::ThreadStarted => {
+                        println!("Started new Thread listening on that device");
+                        Ok(ReplayCompare::ThreadStarted)
+                    }
+                    ReplayResponse::InProgress => {
+                        println!("Already listening on that device");
+                        Ok(ReplayCompare::InProgress)
+                    }
+                }
+            }
+            Err(err) => {
+                let correct = expected.get_status() == err;
+                println!("{}, expected {:?}, correct: {}", err, expected.get_status(), correct);
+                if correct {
+                    Ok(ReplayCompare::Correct)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    pub fn replay_compare_next(&mut self) -> UsbResult<ReplayCompare> {
+        // check for channel messages
+        // TODO: move to own function
+        while let Ok(res) = self.replay.rx.try_recv() {
+            match res {
+                Ok(buf) => {
+                    println!("received {}: {:?}", buf.len(), buf);
+                    let res = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
+                    println!("Correct: {}", buf == res.get_data());
+                },
+                Err((endpoint, e)) => {
+                    println!("Got error from child thread: {}", e);
+                    self.replay.listening.retain(|child| endpoint != child.endpoint);
+                }
+            }
+        }
+        let res = self.replay_next();
+        self.compare_next(res)
+    }
     
     pub fn replay_all(&mut self) -> UsbResult<()> {
         let stdin = io::stdin();
         let mut halt = false;
         //for _ in stdin.lock().lines() {
         for i in 0.. {
-            println!("{}:", i);
-            // check for channel messages
-            while let Ok(res) = self.replay.rx.try_recv() {
-                match res {
-                    Ok(buf) => {
-                        println!("received {}: {:?}", buf.len(), buf);
-                        let res = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
-                        println!("Correct: {}", buf == res.get_data());
-                    },
-                    Err((endpoint, e)) => {
-                        println!("Got error from child thread: {}", e);
-                        self.replay.listening.retain(|child| endpoint != child.endpoint);
-                    }
-                }
-            }
             if halt {
                 match stdin.lock().read_line(&mut String::new()) {
                     Ok(_) => {},
@@ -205,42 +280,19 @@ impl<'a> Control<'a> {
                 }
                 halt = false;
             }
-            let req_len;
-            let res = {
-                let &mut Control { ref mut cap, ref mut replay } = self;
-                let req = Packet::from_bytes(cap.next().unwrap().data).unwrap();
-                req_len = req.get_w_length();
-                if req.get_urb_type() != UrbType::Submit {
-                    println!("dropped (incorrect?) packet: {:?}", req);
-                    continue;
-                }
-                replay.replay_packet(req)
-            };
-            {
-                let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
-                let correct;
-                match res {
-                    Ok(opt) => {
-                        match opt {
-                            Some(buf) => {
-                                correct = expected.get_data() == &buf[..];
-                                if req_len as usize == buf.len() {
-                                    println!("Requested {} but only received {}", req_len, buf.len());
-                                }
-                                println!("Result correct: {}", correct);
-                            },
-                            None => {
-                                correct = true;
-                                println!("Already listening on that device");
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        correct = expected.get_status() == err;
-                        println!("{}, expected {:?}, correct: {}", err, expected.get_status(), correct);
-                    }
-                }
-                if !correct {
+            println!("{}:", i);
+            match self.replay_compare_next() {
+                Ok(ReplayCompare::Correct) => {},
+                Ok(ReplayCompare::Dropped) => {},
+                Ok(ReplayCompare::ThreadStarted) => {},
+                Ok(ReplayCompare::InProgress) => {},
+                Ok(ReplayCompare::Incorrect) => {
+                    println!("Maybe incorrect???");
+                    halt = true;
+                },
+                // real error during execution
+                Err(e) => {
+                    println!("Error replaying packet: {}", e);
                     halt = true;
                 }
             }
@@ -263,7 +315,7 @@ fn get_handle<'a>(context: &'a mut Context) -> DeviceHandle<'a> {
 }
 
 fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receiver<()>,
-                  tx: Sender<Result<Vec<u8>, (u8, Error)>>) {
+                  tx: Sender<Result<Vec<u8>, (u8, UsbError)>>) {
     let timeout = Duration::from_secs(1);
     let mut context = utils::get_context();
     let mut handle = get_handle(&mut context);
@@ -305,7 +357,7 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
                 println!("sending to main...");
                 tx.send(Ok(buf)).unwrap();
             },
-            Err(Error::Timeout) => {},
+            Err(UsbError::Timeout) => {},
             Err(err) => {
                 println!("Err reading interrupt: {}", err);
                 break;
