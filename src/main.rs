@@ -14,7 +14,9 @@ use replay::Control;
 
 fn main() {
     let mut context = utils::get_context();
-    let mut ctrl = Control::new(&Path::new("pcap/g910-handshake.pcap"), &mut context);
+    //let p = Path::new("pcap/g910-handshake.pcap");
+    let p = Path::new("pcap/g602-handshake.pcap");
+    let mut ctrl = Control::new(&p, &mut context);
     // first 6 packets are from wireshark
     ctrl.skip(6);
 
@@ -29,7 +31,8 @@ fn main() {
     //let product_id = u16::from_str_radix(&argv[2], 16).unwrap();
     //println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
 
-    ctrl.replay_all().unwrap();
+    //ctrl.replay_all().unwrap();
+    ctrl.replay_handshake().unwrap();
     //match utils::read_device(&mut device, &device_desc, &mut handle) {
         //Ok(_) => println!("Finished"),
         //Err(e) => panic!("Cannot read from Device: {}", e),

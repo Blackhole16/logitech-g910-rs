@@ -11,15 +11,40 @@ use std::io::BufRead;
 use utils;
 use consts;
 
+#[derive(Debug, PartialEq)]
+struct PacketInfo {
+    buf: Option<Vec<u8>>,
+    req_len: usize,
+    b_request: u8,
+}
+
+impl PacketInfo {
+    fn new(buf: Option<Vec<u8>>, req_len: usize, b_request: u8) -> PacketInfo {
+        PacketInfo {
+            buf: buf,
+            req_len: req_len,
+            b_request: b_request,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 enum ReplayResponse {
-    Success { buf: Vec<u8>, req_len: usize },
+    Success { packet_info: PacketInfo },
     Dropped,
     ThreadStarted,
     InProgress,
 }
+#[derive(Debug)]
+enum ReplayResponseError {
+    Error { packet_info: PacketInfo, err: UsbError },
+    InvalidParam,
+}
 
-enum ReplayCompare {
-    Correct,
+#[derive(Debug, PartialEq)]
+pub enum ReplayCompare {
+    Correct(u8),
+    ErrorExpected(u8),
     Dropped,
     Incorrect,
     ThreadStarted,
@@ -67,9 +92,9 @@ struct Replay<'a> {
 }
 
 impl<'a> Replay<'a> {
-    pub fn replay_packet(&mut self, req: Packet) -> UsbResult<ReplayResponse> {
+    pub fn replay_packet(&mut self, req: Packet) -> Result<ReplayResponse, ReplayResponseError> {
         if req.get_urb_type() != UrbType::Submit {
-            return Err(UsbError::InvalidParam);
+            return Err(ReplayResponseError::InvalidParam);
         }
         let timeout = Duration::from_secs(1);
         let mut buf = Vec::new();
@@ -125,12 +150,12 @@ impl<'a> Replay<'a> {
         }
         match read {
             Ok(len) => if len == buf.len() {
-                Ok(ReplayResponse::Success{ buf: buf, req_len: len })
+                Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
             } else {
                 buf.resize(len, 0u8);
-                Ok(ReplayResponse::Success{ buf: buf, req_len: len })
+                Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
             },
-            Err(err) => Err(err)
+            Err(err) => Err(ReplayResponseError::Error { packet_info: PacketInfo::new(None, 0, req.get_b_request()), err: err })
         }
     }
 
@@ -195,7 +220,7 @@ impl<'a> Control<'a> {
         }
     }
 
-    fn replay_next(&mut self) -> UsbResult<ReplayResponse> {
+    fn replay_next(&mut self) -> Result<ReplayResponse, ReplayResponseError> {
         let &mut Control { ref mut cap, ref mut replay } = self;
         let req = Packet::from_bytes(cap.next().unwrap().data).unwrap();
         if req.get_urb_type() != UrbType::Submit {
@@ -205,19 +230,21 @@ impl<'a> Control<'a> {
         replay.replay_packet(req)
     }
 
-    fn compare_next(&mut self, res: UsbResult<ReplayResponse>) -> UsbResult<ReplayCompare> {
+    fn compare_next(&mut self, res: Result<ReplayResponse, ReplayResponseError>) -> UsbResult<ReplayCompare> {
         let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
         match res {
             Ok(replay_response) => {
                 match replay_response {
-                    ReplayResponse::Success{ buf, req_len } => {
+                    ReplayResponse::Success { packet_info } => {
+                        let PacketInfo { buf, req_len, b_request } = packet_info;
+                        let buf = buf.unwrap();
                         let correct = expected.get_data() == &buf[..];
                         if req_len != buf.len() {
                             println!("Requested {} but only received {}", req_len, buf.len());
                         }
                         println!("Result correct: {}", correct);
                         if correct {
-                            Ok(ReplayCompare::Correct)
+                            Ok(ReplayCompare::Correct(b_request))
                         } else {
                             Ok(ReplayCompare::Incorrect)
                         }
@@ -236,14 +263,18 @@ impl<'a> Control<'a> {
                     }
                 }
             }
-            Err(err) => {
+            Err(ReplayResponseError::Error { packet_info, err }) => {
                 let correct = expected.get_status() == err;
                 println!("{}, expected {:?}, correct: {}", err, expected.get_status(), correct);
                 if correct {
-                    Ok(ReplayCompare::Correct)
+                    Ok(ReplayCompare::ErrorExpected(packet_info.b_request))
                 } else {
                     Err(err)
                 }
+            },
+            Err(ReplayResponseError::InvalidParam) => {
+                println!("got invalid param");
+                Err(UsbError::InvalidParam)
             }
         }
     }
@@ -268,7 +299,8 @@ impl<'a> Control<'a> {
         self.compare_next(res)
     }
     
-    pub fn replay_all(&mut self) -> UsbResult<()> {
+    pub fn replay_stop<F>(&mut self, stop: F) -> UsbResult<()>
+            where F: Fn(&ReplayCompare) -> bool {
         let stdin = io::stdin();
         let mut halt = false;
         //for _ in stdin.lock().lines() {
@@ -282,14 +314,22 @@ impl<'a> Control<'a> {
             }
             println!("{}:", i);
             match self.replay_compare_next() {
-                Ok(ReplayCompare::Correct) => {},
-                Ok(ReplayCompare::Dropped) => {},
-                Ok(ReplayCompare::ThreadStarted) => {},
-                Ok(ReplayCompare::InProgress) => {},
-                Ok(ReplayCompare::Incorrect) => {
-                    println!("Maybe incorrect???");
-                    halt = true;
-                },
+                Ok(ok) => {
+                    if stop(&ok) {
+                        return Ok(());
+                    }
+                    match ok {
+                        ReplayCompare::Correct(_) => {},
+                        ReplayCompare::ErrorExpected(_) => {},
+                        ReplayCompare::Dropped => {},
+                        ReplayCompare::ThreadStarted => {},
+                        ReplayCompare::InProgress => {},
+                        ReplayCompare::Incorrect => {
+                            println!("Maybe incorrect???");
+                            halt = true;
+                        },
+                    }
+                }
                 // real error during execution
                 Err(e) => {
                     println!("Error replaying packet: {}", e);
@@ -298,6 +338,18 @@ impl<'a> Control<'a> {
             }
         }
         Ok(())
+    }
+
+    pub fn replay_all(&mut self) -> UsbResult<()> {
+        self.replay_stop(|_| false)
+    }
+
+    pub fn replay_handshake(&mut self) -> UsbResult<()> {
+        self.replay_stop(|p| {
+            println!("{:?}", p);
+            *p == ReplayCompare::Correct(0x0a)
+                || *p == ReplayCompare::ErrorExpected(0x0a)
+        })
     }
 }
 
