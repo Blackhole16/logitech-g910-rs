@@ -11,6 +11,8 @@ use std::io::BufRead;
 use utils;
 use consts;
 
+type ReplayResult = Result<ReplayResponse, ReplayResponseError>;
+
 #[derive(Debug, PartialEq)]
 struct PacketInfo {
     buf: Option<Vec<u8>>,
@@ -39,6 +41,7 @@ enum ReplayResponse {
 enum ReplayResponseError {
     Error { packet_info: PacketInfo, err: UsbError },
     InvalidParam,
+    Claimed,
 }
 
 #[derive(Debug, PartialEq)]
@@ -89,73 +92,120 @@ struct Replay<'a> {
     claimed: Vec<Claim>,
     tx: Sender<Result<Vec<u8>, (u8, UsbError)>>,
     rx: Receiver<Result<Vec<u8>, (u8, UsbError)>>,
+    timeout: Duration,
 }
 
 impl<'a> Replay<'a> {
-    pub fn replay_packet(&mut self, req: Packet) -> Result<ReplayResponse, ReplayResponseError> {
+    pub fn read_control(&mut self, buf: &mut Vec<u8>, endpoint: u8,
+            bm_request_type: u8, b_request: u8, value: u16, language_id: u16) -> UsbResult<usize> {
+        // if new endpoint, detach kernel driver and claim interface
+        self.try_claim(endpoint).unwrap();
+        self.handle.read_control(
+                bm_request_type,
+                b_request,
+                value,
+                language_id,
+                buf,
+                self.timeout
+        )
+    }
+    pub fn write_control(&mut self, buf: &Vec<u8>, endpoint: u8,
+            bm_request_type: u8, b_request: u8, value: u16, language_id: u16) -> UsbResult<usize> {
+        // if new endpoint, detach kernel driver and claim interface
+        self.try_claim(endpoint).unwrap();
+        self.handle.write_control(
+                bm_request_type,
+                b_request,
+                value,
+                language_id,
+                buf,
+                self.timeout
+        )
+    }
+    pub fn read_interrupt(&mut self, endpoint: u8, endpoint_direction: u8, len: usize) -> ReplayResult {
+        // if a thread is already listening on that interface, return error
+        if self.listening.iter().any(|child| child.endpoint == endpoint) {
+            return Ok(ReplayResponse::InProgress);
+        }
+        // otherwise claim interface if not already claimed
+        self.try_claim(endpoint).unwrap();
+        let mut buf: Vec<u8> = (0..len).map(|_| 0u8).collect();
+        // TODO: don't unwrap
+        match self.handle.read_interrupt(endpoint_direction, &mut buf, self.timeout) {
+            Ok(read) => buf.resize(read, 0u8),
+            Err(err) => return Err(ReplayResponseError::Error {
+                packet_info: PacketInfo::new(None, len, 0u8), err: err})
+        }
+        return Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, 0u8) });
+    }
+    pub fn read_interrupt_async(&mut self, endpoint: u8, endpoint_direction: u8, len: usize)
+            -> ReplayResult {
+        // if not already listening on that iface, start doing so
+        if self.listening.iter().any(|child| child.endpoint == endpoint) {
+            return Ok(ReplayResponse::InProgress);
+        }
+        if self.claimed.iter().any(|claimed| claimed.endpoint == endpoint) {
+            return Err(ReplayResponseError::Claimed);
+        }
+        let tx = self.tx.clone();
+        // channel to send interrupt to
+        let (ltx, lrx) = channel();
+        let t = thread::spawn(move || read_interrupt(endpoint, endpoint_direction, len, lrx, tx));
+        self.listening.push(Child::new(t, ltx, endpoint_direction));
+        return Ok(ReplayResponse::ThreadStarted);
+    }
+
+    pub fn replay_packet(&mut self, req: Packet) -> ReplayResult {
         if req.get_urb_type() != UrbType::Submit {
             return Err(ReplayResponseError::InvalidParam);
         }
-        let timeout = Duration::from_secs(1);
         let mut buf = Vec::new();
         let read;
-        // if new endpoint, detach kernel driver and claim interface
-        if req.get_transfer_type() != TransferType::Interrupt {
-            self.try_claim(req.get_endpoint()).unwrap();
-        }
         // replay
         match req.get_transfer_type() {
             TransferType::Control => {
                 buf.resize(req.get_w_length() as usize, 0u8);
                 if req.get_direction() == Direction::In {
                     println!("Reading control packet...");
-                    read = self.handle.read_control(
+                    read = self.read_control(
+                            &mut buf,
+                            req.get_endpoint(),
                             req.get_bm_request_type(),
                             req.get_b_request(),
                             req.get_value(),
                             req.get_language_id(),
-                            &mut buf,
-                            timeout
                     );
                 } else {
                     println!("Writing control packet...");
-                    read = self.handle.write_control(
+                    read = self.write_control(
+                            &buf,
+                            req.get_endpoint(),
                             req.get_bm_request_type(),
                             req.get_b_request(),
                             req.get_value(),
                             req.get_language_id(),
-                            &buf,
-                            timeout
                     );
+                }
+                match read {
+                    Ok(len) => if len == buf.len() {
+                        Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
+                    } else {
+                        buf.resize(len, 0u8);
+                        Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
+                    },
+                    Err(err) => Err(ReplayResponseError::Error { packet_info:
+                        PacketInfo::new(None, 0, req.get_b_request()), err: err })
                 }
             },
             TransferType::Interrupt => {
-                // if not already listening on that iface, start doing so
-                if !self.listening.iter().any(|child| child.endpoint == req.get_endpoint()) {
-                    println!("Writing interrupt packet...");
-                    let tx = self.tx.clone();
-                    let len = req.get_length() as usize;
-                    let endpoint_direction = req.get_endpoint_direction();
-                    let endpoint = req.get_endpoint();
-                    // channel to send interrupt to
-                    let (ltx, lrx) = channel();
-                    let t = thread::spawn(move || read_interrupt(endpoint, endpoint_direction, len, lrx, tx));
-                    self.listening.push(Child::new(t, ltx, req.get_endpoint_direction()));
-                    return Ok(ReplayResponse::ThreadStarted);
-                } else {
-                    return Ok(ReplayResponse::InProgress);
-                }
+                println!("Reading interrupt packet...");
+                let len = req.get_length() as usize;
+                let endpoint = req.get_endpoint();
+                let endpoint_direction = req.get_endpoint_direction();
+                // channel to send interrupt to
+                self.read_interrupt_async(endpoint, endpoint_direction, len)
             }
             _ => unimplemented!()
-        }
-        match read {
-            Ok(len) => if len == buf.len() {
-                Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
-            } else {
-                buf.resize(len, 0u8);
-                Ok(ReplayResponse::Success { packet_info: PacketInfo::new(Some(buf), len, req.get_b_request()) })
-            },
-            Err(err) => Err(ReplayResponseError::Error { packet_info: PacketInfo::new(None, 0, req.get_b_request()), err: err })
         }
     }
 
@@ -210,6 +260,7 @@ impl<'a> Control<'a> {
                 claimed: Vec::new(),
                 tx: tx,
                 rx: rx,
+                timeout: Duration::from_secs(1),
             }
         }
     }
@@ -220,7 +271,7 @@ impl<'a> Control<'a> {
         }
     }
 
-    fn replay_next(&mut self) -> Result<ReplayResponse, ReplayResponseError> {
+    fn replay_next(&mut self) -> ReplayResult {
         let &mut Control { ref mut cap, ref mut replay } = self;
         let req = Packet::from_bytes(cap.next().unwrap().data).unwrap();
         if req.get_urb_type() != UrbType::Submit {
@@ -230,7 +281,7 @@ impl<'a> Control<'a> {
         replay.replay_packet(req)
     }
 
-    fn compare_next(&mut self, res: Result<ReplayResponse, ReplayResponseError>) -> UsbResult<ReplayCompare> {
+    fn compare_next(&mut self, res: ReplayResult) -> UsbResult<ReplayCompare> {
         let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
         match res {
             Ok(replay_response) => {
@@ -274,6 +325,10 @@ impl<'a> Control<'a> {
             },
             Err(ReplayResponseError::InvalidParam) => {
                 println!("got invalid param");
+                Err(UsbError::InvalidParam)
+            },
+            Err(ReplayResponseError::Claimed) => {
+                println!("device already claimed");
                 Err(UsbError::InvalidParam)
             }
         }
@@ -340,16 +395,34 @@ impl<'a> Control<'a> {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn replay_all(&mut self) -> UsbResult<()> {
         self.replay_stop(|_| false)
     }
 
     pub fn replay_handshake(&mut self) -> UsbResult<()> {
+        if self.replay.handshake_done {
+            return Err(UsbError::InvalidParam);
+        }
+        self.replay.handshake_done = true;
         self.replay_stop(|p| {
             println!("{:?}", p);
-            *p == ReplayCompare::Correct(0x0a)
-                || *p == ReplayCompare::ErrorExpected(0x0a)
+            *p == ReplayCompare::ErrorExpected(0x0a)
         })
+    }
+
+    pub fn test(&mut self) -> UsbResult<()> {
+        try!(self.replay_handshake());
+        match self.replay.read_interrupt(1,0x82, 20) {
+            Ok(_) => {
+                println!("success");
+                Ok(())
+            },
+            Err(e) => {
+                println!("error: {:?}", e);
+                Err(UsbError::InvalidParam)
+            }
+        }
     }
 }
 

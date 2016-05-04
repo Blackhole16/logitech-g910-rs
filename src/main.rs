@@ -32,7 +32,7 @@ fn main() {
     //println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
 
     //ctrl.replay_all().unwrap();
-    ctrl.replay_handshake().unwrap();
+    ctrl.test().unwrap();
     //match utils::read_device(&mut device, &device_desc, &mut handle) {
         //Ok(_) => println!("Finished"),
         //Err(e) => panic!("Cannot read from Device: {}", e),
