@@ -130,7 +130,6 @@ impl<'a> Replay<'a> {
         // otherwise claim interface if not already claimed
         self.try_claim(endpoint).unwrap();
         let mut buf: Vec<u8> = (0..len).map(|_| 0u8).collect();
-        // TODO: don't unwrap
         match self.handle.read_interrupt(endpoint_direction, &mut buf, self.timeout) {
             Ok(read) => buf.resize(read, 0u8),
             Err(err) => return Err(ReplayResponseError::Error {
@@ -209,7 +208,13 @@ impl<'a> Replay<'a> {
         }
     }
 
-    fn try_claim(&mut self, endpoint: u8) -> UsbResult<()> {
+    fn try_claim(&mut self, mut endpoint: u8) -> UsbResult<()> {
+        // for some reason we cannot claim interface 2 as it doesn't exist
+        // but we are able to read from it, if we claim interface 1
+        // yep, i love logitech
+        if endpoint == 2 {
+            endpoint = 1;
+        }
         // if new endpoint, detach kernel driver and claim interface
         if !self.claimed.iter().any(|claim| claim.endpoint == endpoint) {
             println!("Claiming interface {}", endpoint);
@@ -334,8 +339,7 @@ impl<'a> Control<'a> {
         }
     }
 
-    pub fn replay_compare_next(&mut self) -> UsbResult<ReplayCompare> {
-        // check for channel messages
+    pub fn try_poll(&mut self) {
         // TODO: move to own function
         while let Ok(res) = self.replay.rx.try_recv() {
             match res {
@@ -350,6 +354,10 @@ impl<'a> Control<'a> {
                 }
             }
         }
+    }
+
+    pub fn replay_compare_next(&mut self) -> UsbResult<ReplayCompare> {
+        // check for channel messages
         let res = self.replay_next();
         self.compare_next(res)
     }
@@ -360,6 +368,7 @@ impl<'a> Control<'a> {
         let mut halt = false;
         //for _ in stdin.lock().lines() {
         for i in 0.. {
+            self.try_poll();
             if halt {
                 match stdin.lock().read_line(&mut String::new()) {
                     Ok(_) => {},
@@ -413,7 +422,7 @@ impl<'a> Control<'a> {
 
     pub fn test(&mut self) -> UsbResult<()> {
         try!(self.replay_handshake());
-        match self.replay.read_interrupt(1,0x82, 20) {
+        match self.replay.read_interrupt_async(2, 0x82, 20).map(|_| self.replay.read_interrupt_async(1, 0x81, 20)) {
             Ok(_) => {
                 println!("success");
                 Ok(())
@@ -439,11 +448,18 @@ fn get_handle<'a>(context: &'a mut Context) -> DeviceHandle<'a> {
     }
 }
 
-fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receiver<()>,
+fn read_interrupt(endpoint_given: u8, endpoint_direction: u8, len: usize, lrx: Receiver<()>,
                   tx: Sender<Result<Vec<u8>, (u8, UsbError)>>) {
-    let timeout = Duration::from_secs(1);
+    let timeout = Duration::from_secs(10);
     let mut context = utils::get_context();
     let mut handle = get_handle(&mut context);
+    // we all love logitech
+    let endpoint;
+    if endpoint_given == 2 {
+        endpoint = 1;
+    } else {
+        endpoint = endpoint_given;
+    }
     println!("Claiming interface {}", endpoint);
     // detch kernel driver
     let has_kernel_driver = match utils::detach(&mut handle, endpoint) {
@@ -455,11 +471,13 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
         }
     };
     println!("had kernel driver: {}", has_kernel_driver);
+    let is_claimed;
     match handle.claim_interface(endpoint) {
-        Ok(_) => {},
+        Ok(_) => is_claimed = true,
         Err(e) => {
             println!("Could not claim interface {}", endpoint);
-            tx.send(Err((endpoint, e))).unwrap();
+            //tx.send(Err((endpoint, e))).unwrap();
+            is_claimed = false;
         }
     }
     loop {
@@ -489,8 +507,13 @@ fn read_interrupt(endpoint: u8, endpoint_direction: u8, len: usize, lrx: Receive
             }
         }
     }
+    println!("thread for endpoint {} cleaning up", endpoint_given);
     // cleanup
-    handle.release_interface(endpoint).unwrap();
-    handle.attach_kernel_driver(endpoint).unwrap();
+    if is_claimed {
+        handle.release_interface(endpoint).unwrap();
+    }
+    if has_kernel_driver {
+        handle.attach_kernel_driver(endpoint).unwrap();
+    }
 }
 
