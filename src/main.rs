@@ -13,6 +13,10 @@ use std::path::Path;
 use replay::Control;
 
 fn main() {
+    //let p1 = Path::new("pcap/g602-handshake.pcap");
+    //let p2 = Path::new("pcap/g602-handshake-off.pcap");
+    //utils::compare(&p1, &p2);
+
     let mut context = utils::get_context();
     //let p = Path::new("pcap/g910-handshake.pcap");
     let p = Path::new("pcap/g602-handshake.pcap");

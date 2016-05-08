@@ -11,6 +11,9 @@ use libusb::{
 };
 use std::time::Duration;
 use std::fmt::Display;
+use std::path::Path;
+use pcap;
+use usb;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -223,4 +226,18 @@ fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
         }
     }
     return Ok(());
+}
+
+pub fn compare(p1: &Path, p2: &Path) {
+    let mut c1 = pcap::Capture::from_file(&p1).unwrap();
+    let mut c2 = pcap::Capture::from_file(&p2).unwrap();
+    for i in 0..110 {
+        let p1 = usb::Packet::from_bytes(c1.next().unwrap().data).unwrap();
+        let p2 = usb::Packet::from_bytes(c2.next().unwrap().data).unwrap();
+        if !p1.same(&p2) {
+            println!("Packet {} incorrect", i+1);
+            println!("{:?}", p1);
+            println!("{:?}", p2);
+        }
+    }
 }
