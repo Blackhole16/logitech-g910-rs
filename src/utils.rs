@@ -51,7 +51,7 @@ pub fn get_context() -> Context {
     return context;
 }
 
-pub fn open_device<'a>(context: &'a mut Context, vendor_id: &u16, product_id: &u16) -> Result<(Device<'a>, DeviceDescriptor, DeviceHandle<'a>)> {
+pub fn open_device(context: &Context, vendor_id: u16, product_id: u16) -> Result<(Device, DeviceDescriptor, DeviceHandle)> {
     let devices = match context.devices() {
         Ok(devices) => devices,
         Err(e) => return Err(e),
@@ -61,7 +61,7 @@ pub fn open_device<'a>(context: &'a mut Context, vendor_id: &u16, product_id: &u
             Ok(dd) => dd,
             Err(_) => continue
         };
-        if dd.vendor_id() == *vendor_id && dd.product_id() == *product_id  {
+        if dd.vendor_id() == vendor_id && dd.product_id() == product_id  {
             return match d.open() {
                 Ok(handle) => Ok((d, dd, handle)),
                 Err(e) => Err(e),

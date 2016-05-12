@@ -1,6 +1,6 @@
 use pcap::{Capture, Offline};
 use std::path::Path;
-use libusb::{DeviceHandle, Result as UsbResult, Error as UsbError, Context};
+use libusb::{DeviceHandle, Result as UsbResult, Error as UsbError, Context, AsyncGroup, Transfer};
 use usb::{Packet, TransferType, UrbType, Direction};
 use std::time::Duration;
 use std::thread;
@@ -254,7 +254,7 @@ pub struct Control<'a> {
 }
 
 impl<'a> Control<'a> {
-    pub fn new(path: &Path, context: &'a mut Context) -> Control<'a> {
+    pub fn new(path: &Path, context: &'a Context) -> Control<'a> {
         let (tx, rx) = channel();
         Control {
             cap: Capture::from_file(path).unwrap(),
@@ -339,21 +339,34 @@ impl<'a> Control<'a> {
         }
     }
 
-    pub fn try_poll(&mut self) {
-        // TODO: move to own function
-        while let Ok(res) = self.replay.rx.try_recv() {
+    pub fn try_poll(&mut self) -> Option<Result<Vec<u8>, (u8, UsbError)>> {
+        match self.replay.rx.try_recv() {
+            Ok(res) => match res {
+                Ok(buf) => {
+                    Some(Ok(buf))
+                },
+                Err((endpoint, e)) => {
+                    println!("Got error from child thread: {}", e);
+                    self.replay.listening.retain(|child| endpoint != child.endpoint);
+                    Some(Err((endpoint, e)))
+                }
+            },
+            Err(_) => None
+        }
+    }
+
+    pub fn poll_compare(&mut self) {
+        while let Some(res) = self.try_poll() {
             match res {
                 Ok(buf) => {
                     println!("received {}: {:?}", buf.len(), buf);
                     let res = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
                     println!("Correct: {}", buf == res.get_data());
                 },
-                Err((endpoint, e)) => {
-                    println!("Got error from child thread: {}", e);
-                    self.replay.listening.retain(|child| endpoint != child.endpoint);
-                }
+                Err((endpoint, e)) => {}
             }
         }
+        
     }
 
     pub fn replay_compare_next(&mut self) -> UsbResult<ReplayCompare> {
@@ -368,7 +381,7 @@ impl<'a> Control<'a> {
         let mut halt = false;
         //for _ in stdin.lock().lines() {
         for i in 0.. {
-            self.try_poll();
+            self.poll_compare();
             if halt {
                 match stdin.lock().read_line(&mut String::new()) {
                     Ok(_) => {},
@@ -420,26 +433,40 @@ impl<'a> Control<'a> {
         })
     }
 
-    pub fn test(&mut self) -> UsbResult<()> {
+    pub fn test(&mut self, context: &Context) -> UsbResult<()> {
         try!(self.replay_handshake());
-        match self.replay.read_interrupt_async(2, 0x82, 20).map(|_| self.replay.read_interrupt_async(1, 0x81, 20)) {
-            Ok(_) => {
-                println!("success");
-                Ok(())
-            },
-            Err(e) => {
-                println!("error: {:?}", e);
-                Err(UsbError::InvalidParam)
+        println!("handshake done, w8ing 5 secs");
+        //thread::sleep(Duration::from_secs(5));
+        utils::detach(&mut self.replay.handle, 0u8);
+        utils::detach(&mut self.replay.handle, 1u8);
+        self.replay.handle.claim_interface(0u8);
+        self.replay.handle.claim_interface(1u8);
+        let mut buf2 = Vec::new();
+        buf2.resize(128, 0u8);
+        let mut buf3 = Vec::new();
+        buf3.resize(128, 0u8);
+        {
+            let mut async_group = AsyncGroup::new(context);
+            println!("adding 1");
+            async_group.submit(Transfer::interrupt(&self.replay.handle, 0x81, &mut buf2, Duration::from_secs(10))).unwrap();
+            println!("adding 2");
+            async_group.submit(Transfer::interrupt(&self.replay.handle, 0x82, &mut buf3, Duration::from_secs(10))).unwrap();
+            loop {
+                println!("polling");
+                let mut transfer = async_group.wait_any().unwrap();
+                println!("{:?}, {:?}", transfer.status(), transfer.actual());
+                async_group.submit(transfer);
             }
         }
+        Ok(())
     }
-}
+} 
 
-fn get_handle<'a>(context: &'a mut Context) -> DeviceHandle<'a> {
+fn get_handle(context: &Context) -> DeviceHandle {
     match utils::open_device(
         context,
-        &consts::VENDOR_ID,
-        &consts::PRODUCT_ID
+        consts::VENDOR_ID,
+        consts::PRODUCT_ID
     ){
         Ok((_, _, handle)) => handle,
         Err(e) => {

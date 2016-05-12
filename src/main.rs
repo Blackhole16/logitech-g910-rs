@@ -20,7 +20,7 @@ fn main() {
     let mut context = utils::get_context();
     //let p = Path::new("pcap/g910-handshake.pcap");
     let p = Path::new("pcap/g602-handshake.pcap");
-    let mut ctrl = Control::new(&p, &mut context);
+    let mut ctrl = Control::new(&p, &context);
     // first 6 packets are from wireshark
     ctrl.skip(6);
 
@@ -36,7 +36,7 @@ fn main() {
     //println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
 
     //ctrl.replay_all().unwrap();
-    ctrl.test().unwrap();
+    ctrl.test(&context).unwrap();
     //match utils::read_device(&mut device, &device_desc, &mut handle) {
         //Ok(_) => println!("Finished"),
         //Err(e) => panic!("Cannot read from Device: {}", e),

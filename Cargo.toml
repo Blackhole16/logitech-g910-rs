@@ -4,6 +4,6 @@ version = "0.1.0"
 authors = ["Blackhole16 <jaro.fietz@gmx.de>"]
 
 [dependencies]
-libusb = "0.2"
+libusb = { git = "https://github.com/kevinmehall/libusb-rs", rev = "async" }
 pcap = "0.5.5"
 
