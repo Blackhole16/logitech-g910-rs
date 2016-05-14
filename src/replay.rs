@@ -70,6 +70,7 @@ impl Child {
     }
 }
 
+#[derive(Debug)]
 struct Claim {
     endpoint: u8,
     has_kernel_driver: bool,
@@ -435,18 +436,31 @@ impl<'a> Control<'a> {
 
     pub fn test(&mut self, context: &Context) -> UsbResult<()> {
         try!(self.replay_handshake());
-        println!("handshake done, w8ing 5 secs");
-        //thread::sleep(Duration::from_secs(5));
-        utils::detach(&mut self.replay.handle, 0u8);
-        utils::detach(&mut self.replay.handle, 1u8);
-        self.replay.handle.claim_interface(0u8);
-        self.replay.handle.claim_interface(1u8);
+        println!("handshake done");
+        println!("{:?}", self.replay.claimed);
+        println!("{:?}", self.replay.listening.iter().map(|c| c.endpoint).collect::<Vec<u8>>());
+        //self.replay.handle.release_interface(0);
+        self.replay.try_claim(1u8).unwrap();
+        //let t = thread::spawn(|| test2());
+        let mut buf1 = Vec::new();
+        buf1.resize(26, 0u8);
         let mut buf2 = Vec::new();
         buf2.resize(128, 0u8);
         let mut buf3 = Vec::new();
         buf3.resize(128, 0u8);
         {
-            let mut async_group = AsyncGroup::new(context);
+            let mut async_group = AsyncGroup::new(&context);
+            println!("adding 0");
+            async_group.submit(Transfer::control(
+                    &self.replay.handle,
+                    0x80,
+                    &mut buf1,
+                    0x80,
+                    0x06,
+                    0x0302,
+                    0x0409,
+                    Duration::from_secs(10)
+            )).unwrap();
             println!("adding 1");
             async_group.submit(Transfer::interrupt(&self.replay.handle, 0x81, &mut buf2, Duration::from_secs(10))).unwrap();
             println!("adding 2");
