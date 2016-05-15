@@ -20,23 +20,34 @@ fn main() {
     let mut context = utils::get_context();
     //let p = Path::new("pcap/g910-handshake.pcap");
     let p = Path::new("pcap/g602-handshake.pcap");
-    let mut ctrl = Control::new(&p, &context);
-    // first 6 packets are from wireshark
-    ctrl.skip(6);
+    let (mut device, device_desc, mut handle) = utils::open_device(&context, consts::VENDOR_ID, consts::PRODUCT_ID).unwrap();
 
-    //let argv: Vec<String> = std::env::args().collect();
-    //println!("{:?}", argv);
-    //if argv.len() < 3 {
-        //println!("usage: usbtest <vendor-id> <product-id>");
-        //return;
-    //}
+    // for some reason we cannot claim interface 2 as it doesn't exist
+    // but we are able to read from it, if we claim interface 1
+ 
+    println!("Claiming interfaces 0 and 1");
+    // detch kernel driver
+    let has_kernel_driver0 = utils::detach(&mut handle, 0).unwrap();
+    let has_kernel_driver1 = utils::detach(&mut handle, 1).unwrap();
+    handle.claim_interface(0).unwrap();
+    handle.claim_interface(1).unwrap();
 
-    //let vendor_id = u16::from_str_radix(&argv[1], 16).unwrap();
-    //let product_id = u16::from_str_radix(&argv[2], 16).unwrap();
-    //println!("Vendor-Id: {}    Product-Id: {}", vendor_id, product_id);
+    {
+        let mut ctrl = Control::new(&p, &context, &handle);
+        // first 6 packets are from wireshark
+        ctrl.skip(6);
+        ctrl.replay_handshake().unwrap();
+    }
 
-    //ctrl.replay_all().unwrap();
-    ctrl.test(&context).unwrap();
+    handle.release_interface(1).unwrap();
+    handle.release_interface(0).unwrap();
+    if has_kernel_driver1 {
+        handle.attach_kernel_driver(1).unwrap();
+    }
+    if has_kernel_driver0 {
+        handle.attach_kernel_driver(0).unwrap();
+    }
+    //ctrl.test(&context).unwrap();
     //match utils::read_device(&mut device, &device_desc, &mut handle) {
         //Ok(_) => println!("Finished"),
         //Err(e) => panic!("Cannot read from Device: {}", e),
