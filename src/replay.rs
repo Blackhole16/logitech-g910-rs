@@ -71,6 +71,25 @@ struct Replay<'a> {
 }
 
 impl<'a> Replay<'a> {
+    pub fn send_control(&mut self, endpoint_direction: u8, buf: Vec<u8>, request_type: u8,
+                        request: u8, value:u16, index: u16) ->  UsbResult<()> {
+        println!("Initiating control packet...");
+        self.async_group.submit(Transfer::control(
+                self.handle,
+                endpoint_direction,
+                buf,
+                request_type,
+                request,
+                value,
+                index,
+                self.timeout
+        ))
+    }
+
+    pub fn send_interrupt(&mut self, endpoint_direction: u8, buf: Vec<u8>) -> UsbResult<()> {
+        self.async_group.submit(Transfer::interrupt(self.handle, endpoint_direction, buf, self.timeout))
+    }
+
     pub fn send_packet(&mut self, req: Packet) -> SendResult {
         if req.get_urb_type() != UrbType::Submit {
             return Err(SendResponseError::InvalidParam);
@@ -86,24 +105,22 @@ impl<'a> Replay<'a> {
                 }
                 len = buf.len();
                 println!("Initiating control packet...");
-                self.async_group.submit::<'a>(Transfer::<'a>::control(
-                        self.handle,
+                self.send_control(
                         req.get_endpoint_direction(),
                         buf,
                         req.get_bm_request_type(),
                         req.get_b_request(),
                         req.get_value(),
                         req.get_language_id(),
-                        self.timeout
-                ))
+                )
             },
             TransferType::Interrupt => {
-                println!("Reading interrupt packet...");
+                println!("Initiating interrupt packet on iface {}...",  req.get_endpoint());
                 len = req.get_length() as usize;
                 buf.resize(len, 0u8);
                 let endpoint = req.get_endpoint();
                 let endpoint_direction = req.get_endpoint_direction();
-                self.async_group.submit::<'a>(Transfer::<'a>::interrupt(self.handle, endpoint_direction, buf, self.timeout))
+                self.send_interrupt(endpoint_direction, buf)
             }
             _ => unimplemented!()
         };
@@ -156,10 +173,10 @@ impl<'a> Control<'a> {
     }
 
     fn compare_next(&mut self, send: SendResult, recv: RecvResult) -> UsbResult<ReplayCompare> {
-        let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
         let buf = try!(recv);
         match send {
             Ok(send_response) => {
+                let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
                 match send_response {
                     SendResponse::Success { packet_info } => {
                         let PacketInfo { req_len, b_request } = packet_info;
@@ -183,6 +200,7 @@ impl<'a> Control<'a> {
                 }
             }
             Err(SendResponseError::Error { packet_info, err }) => {
+                let expected = Packet::from_bytes(self.cap.next().unwrap().data).unwrap();
                 let correct = expected.get_status() == err;
                 println!("{}, expected {:?}, correct: {}", err, expected.get_status(), correct);
                 if correct {
@@ -270,56 +288,19 @@ impl<'a> Control<'a> {
                 _ => false
             }
         }));
-        // INTERRUP in iface 1
-        self.send_next();
         // INTERRUP in iface 2
-        self.send_next();
-        self.skip(2);
-        self.replay_stop(|p| {
-            println!("{:?}", p);
-            *p == ReplayCompare::Correct(0x09)
-        })
-    }
+        let send2 = self.send_next();
 
-    //pub fn test(&mut self, context: &Context) -> UsbResult<()> {
-        //try!(self.replay_handshake());
-        //println!("handshake done");
-        //println!("{:?}", self.replay.claimed);
-        //println!("{:?}", self.replay.listening.iter().map(|c| c.endpoint).collect::<Vec<u8>>());
-        ////self.replay.handle.release_interface(0);
-        //self.replay.try_claim(1u8).unwrap();
-        ////let t = thread::spawn(|| test2());
-        //let mut buf1 = Vec::new();
-        //buf1.resize(26, 0u8);
-        //let mut buf2 = Vec::new();
-        //buf2.resize(128, 0u8);
-        //let mut buf3 = Vec::new();
-        //buf3.resize(128, 0u8);
-        //{
-            //let mut async_group = AsyncGroup::new(&context);
-            //println!("adding 0");
-            //async_group.submit(Transfer::control(
-                    //&self.replay.handle,
-                    //0x80,
-                    //buf1,
-                    //0x80,
-                    //0x06,
-                    //0x0302,
-                    //0x0409,
-                    //Duration::from_secs(10)
-            //)).unwrap();
-            //println!("adding 1");
-            //async_group.submit(Transfer::interrupt(&self.replay.handle, 0x81, buf2, Duration::from_secs(10))).unwrap();
-            //println!("adding 2");
-            //async_group.submit(Transfer::interrupt(&self.replay.handle, 0x82, buf3, Duration::from_secs(10))).unwrap();
-            //loop {
-                //println!("polling");
-                //let mut transfer = async_group.wait_any().unwrap();
-                //println!("{:?}, {:?}", transfer.status(), transfer.actual());
-                //async_group.submit(transfer);
-            //}
-        //}
-        //Ok(())
-    //}
+        // continue replay until after the first SET_REPORT packet
+        try!(self.replay_stop(|p| {
+            println!("in fn: {:?}", p);
+            *p == ReplayCompare::Correct(0x09)
+        }));
+        // next one should be the response on iface 2
+        let recv = self.replay.recv();
+        self.compare_next(send2, recv);
+
+        Ok(())
+    }
 } 
 

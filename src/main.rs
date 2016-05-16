@@ -18,8 +18,8 @@ fn main() {
     //utils::compare(&p1, &p2);
 
     let mut context = utils::get_context();
-    //let p = Path::new("pcap/g910-handshake.pcap");
-    let p = Path::new("pcap/g602-handshake.pcap");
+    let p = Path::new("pcap/g910-handshake.pcap");
+    //let p = Path::new("pcap/g602-handshake.pcap");
     let (mut device, device_desc, mut handle) = utils::open_device(&context, consts::VENDOR_ID, consts::PRODUCT_ID).unwrap();
 
     // for some reason we cannot claim interface 2 as it doesn't exist
@@ -33,6 +33,7 @@ fn main() {
     handle.claim_interface(1).unwrap();
 
     {
+        handle.reset();
         let mut ctrl = Control::new(&p, &context, &handle);
         // first 6 packets are from wireshark
         ctrl.skip(6);
