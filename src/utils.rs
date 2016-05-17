@@ -56,7 +56,7 @@ pub fn open_device(context: &Context, vendor_id: u16, product_id: u16) -> Result
         Ok(devices) => devices,
         Err(e) => return Err(e),
     };
-    for mut d in devices.iter() {
+    for d in devices.iter() {
         let dd = match d.device_descriptor() {
             Ok(dd) => dd,
             Err(_) => continue
@@ -228,6 +228,7 @@ fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
     return Ok(());
 }
 
+#[allow(unused)]
 pub fn compare(p1: &Path, p2: &Path) {
     let mut c1 = pcap::Capture::from_file(&p1).unwrap();
     let mut c2 = pcap::Capture::from_file(&p2).unwrap();

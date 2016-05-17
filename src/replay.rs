@@ -5,8 +5,6 @@ use usb::{Packet, TransferType, UrbType, Direction};
 use std::time::Duration;
 use std::io;
 use std::io::BufRead;
-use utils;
-use consts;
 
 type SendResult = Result<SendResponse, SendResponseError>;
 type RecvResult = UsbResult<Vec<u8>>;
@@ -35,7 +33,6 @@ enum SendResponse {
 enum SendResponseError {
     Error { packet_info: PacketInfo, err: UsbError },
     InvalidParam,
-    Claimed,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -46,27 +43,11 @@ pub enum ReplayCompare {
     Incorrect,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct Claim {
-    endpoint: u8,
-    has_kernel_driver: bool,
-}
-
-impl Claim {
-    fn new(endpoint: u8, has_kernel_driver: bool) -> Claim {
-        Claim {
-            endpoint: endpoint,
-            has_kernel_driver: has_kernel_driver,
-        }
-    }
-}
-
 struct Replay<'a> {
     handle: &'a DeviceHandle<'a>,
     async_group: AsyncGroup<'a>,
     // TODO: use this flag
     handshake_done: bool,
-    claimed: Vec<Claim>,
     timeout: Duration,
 }
 
@@ -118,7 +99,6 @@ impl<'a> Replay<'a> {
                 println!("Initiating interrupt packet on iface {}...",  req.get_endpoint());
                 len = req.get_length() as usize;
                 buf.resize(len, 0u8);
-                let endpoint = req.get_endpoint();
                 let endpoint_direction = req.get_endpoint_direction();
                 self.send_interrupt(endpoint_direction, buf)
             }
@@ -150,7 +130,6 @@ impl<'a> Control<'a> {
                 handle: handle,
                 async_group: AsyncGroup::new(context),
                 handshake_done: false,
-                claimed: Vec::new(),
                 timeout: Duration::from_secs(10),
             }
         }
@@ -212,17 +191,13 @@ impl<'a> Control<'a> {
             Err(SendResponseError::InvalidParam) => {
                 println!("got invalid param");
                 Err(UsbError::InvalidParam)
-            },
-            Err(SendResponseError::Claimed) => {
-                println!("device already claimed");
-                Err(UsbError::InvalidParam)
             }
         }
     }
 
     pub fn replay_compare_next(&mut self) -> UsbResult<ReplayCompare> {
         let send = self.send_next();
-        let mut res = self.replay.recv();
+        let res = self.replay.recv();
         self.compare_next(send, res)
     }
     
@@ -298,7 +273,7 @@ impl<'a> Control<'a> {
         }));
         // next one should be the response on iface 2
         let recv = self.replay.recv();
-        self.compare_next(send2, recv);
+        self.compare_next(send2, recv).unwrap();
 
         Ok(())
     }
