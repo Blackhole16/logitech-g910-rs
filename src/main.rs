@@ -14,7 +14,7 @@ use replay::Control;
 
 fn main() {
     let context = utils::get_context();
-    let p = Path::new("pcap/g910-handshake.pcap");
+    let p = Path::new("pcap/g910/handshake/handshake.pcap");
     //let p = Path::new("pcap/g602-handshake.pcap");
     let (_, _, mut handle) = utils::open_device(&context, consts::VENDOR_ID, consts::PRODUCT_ID).unwrap();
 
@@ -33,6 +33,7 @@ fn main() {
         let mut ctrl = Control::new(&p, &context, &handle);
         // first 6 packets are from wireshark
         ctrl.skip(6);
+        ctrl.test().unwrap();
         ctrl.replay_handshake().unwrap();
     }
 

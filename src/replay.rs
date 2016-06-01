@@ -5,6 +5,7 @@ use usb::{Packet, TransferType, UrbType, Direction};
 use std::time::Duration;
 use std::io;
 use std::io::BufRead;
+use std::u8;
 
 type SendResult = Result<SendResponse, SendResponseError>;
 type RecvResult = UsbResult<Vec<u8>>;
@@ -245,7 +246,7 @@ impl<'a> Control<'a> {
         self.replay_stop(|_| false)
     }
 
-    pub fn replay_handshake(&mut self) -> UsbResult<()> {
+    pub fn replay_basic_handshake(&mut self) -> UsbResult<()> {
         if self.replay.handshake_done {
             return Err(UsbError::InvalidParam);
         }
@@ -263,6 +264,11 @@ impl<'a> Control<'a> {
                 _ => false
             }
         }));
+        Ok(())
+    }
+
+    pub fn replay_handshake(&mut self) -> UsbResult<()> {
+        try!(self.replay_basic_handshake());
         // INTERRUP in iface 2
         let send2 = self.send_next();
 
@@ -275,6 +281,51 @@ impl<'a> Control<'a> {
         let recv = self.replay.recv();
         self.compare_next(send2, recv).unwrap();
 
+        Ok(())
+    }
+
+    pub fn test(&mut self) -> UsbResult<()> {
+        try!(self.replay_basic_handshake());
+        let streams = [
+            "11ff0f4b00040000000000000000000000000000",
+            "12ff0f3b000400090800cdff0900cdff0600cdff0700cdff0400cdff0500cdff0200cdff0300cdff0100cdff0000000000000000000000000000000000000000",
+            "11ff0f4b00100000000000000000000000000000",
+            "11ff0f3b0010000202ff00000100cdff00000000",
+            "11ff0f4b00010000000000000000000000000000",
+            "12ff0f3b0001000e5900cdff5600cdff5700cdff5400cdff5500cdff5200cdff5300cdff5000cdff5100cdffe600cdffe700cdffe400cdffe500cdffe200cdff",
+            "12ff0f3b0001000e6400cdffe300cdff6500cdffe000cdff6200cdffe100cdff6300cdff6000cdff6100cdff0e00cdff8a00cdff0f00cdff8b00cdff0c00cdff",
+            "12ff0f3b0001000e8800cdff0d00cdff8900cdff0a00cdff0b00cdff0800cdff8700cdff0900cdff0600cdff0700cdff0400cdff0500cdff1e00cdff1f00cdff",
+            "12ff0f3b0001000e1c00cdff1d00cdff1a00cdff1b00cdff1800cdff1900cdff1600cdff1700cdff1400cdff1500cdff1200cdff1300cdff1000cdff1100cdff",
+            "12ff0f3b0001000e2e00cdff2f00cdff2cff00002d00cdff2a00cdff2b00cdff2800cdff2900cdff2600cdff2700cdff2400cdff2500cdff2200cdff2300cdff",
+            "12ff0f3b0001000e2000cdff2100cdff3e00cdff3f00cdff3c00cdff3d00cdff3a00cdff3b00cdff3800cdff3900cdff3600cdff3700cdff3400cdff3500cdff",
+            "12ff0f3b0001000e3200cdff3300cdff3000cdff3100cdff4e00cdff4f00cdff4c00cdff4d00cdff4a00cdff4b00cdff4800cdff4900cdff4600cdff4700cdff",
+            "12ff0f3b0001000d4400cdff4500cdff4200cdff4300cdff4000cdff4100cdff5e00cdff5f00cdff5c00cdff5d00cdff5a00cdff5b00cdff5800cdff00000000",
+            "11ff0f5b00000000000000000000000000000000",
+        ];
+        self.replay.timeout = Duration::from_secs(1);
+        let mut datas = Vec::new();
+        for s in streams.iter() {
+            let mut buf = Vec::new();
+            for i in 0..s.len()/2 {
+                buf.push(u8::from_str_radix(&s[2*i...2*i+1], 16).unwrap());
+            }
+            datas.push(buf);
+        }
+        for data in datas {
+            let mut buf2 = Vec::new();
+            let send2 = self.replay.send_interrupt(0x82, buf2);
+            let mut to_send = Vec::new();
+            to_send.extend_from_slice(&data);
+            self.replay.send_control(0x80, to_send, 0x21, 9, 0x0200 | data[0] as u16, 0x0001);
+            match self.replay.recv() {
+                Ok(buf) => println!("OK: {:?}", &buf),
+                Err(e) => println!("Err: {}", e)
+            }
+            match self.replay.recv() {
+                Ok(buf) => println!("OK: {:?}", &buf),
+                Err(e) => println!("Err: {}", e)
+            }
+        }
         Ok(())
     }
 } 
