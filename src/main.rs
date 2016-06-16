@@ -7,12 +7,24 @@ mod consts;
 mod print;
 mod replay;
 mod usb;
+mod color;
+mod keys;
 mod utils;
 
 use std::path::Path;
 use replay::Control;
 
 fn main() {
+    //let p = Path::new("pcap/g910/handshake/handshake2.pcap");
+    //utils::print_all_data(&p);
+    //return;
+
+    //let p1 = Path::new("pcap/g910/color/space-red.pcap");
+    //let p2 = Path::new("pcap/g910/color/space-blue.pcap");
+    //utils::compare(&p1, &p2);
+    //return;
+
+
     let context = utils::get_context();
     let p = Path::new("pcap/g910/handshake/handshake.pcap");
     //let p = Path::new("pcap/g602-handshake.pcap");

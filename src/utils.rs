@@ -228,17 +228,37 @@ fn read_endpoint(handle: &mut DeviceHandle, endpoint: &Endpoint) -> Result<()>{
     return Ok(());
 }
 
+pub fn print_all_data(p: &Path) {
+    let mut c = pcap::Capture::from_file(p).unwrap();
+    while let Ok(pa) = c.next() {
+        let packet = usb::Packet::from_bytes(pa.data).unwrap();
+        if packet.get_direction() == usb::Direction::Out
+                && packet.get_data_length() != 0
+                && packet.get_endpoint() == 0
+                && packet.get_data()[0] == 0x12 {
+            println!("{:?}", packet.get_data().iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>());
+        }
+    }
+}
+
 #[allow(unused)]
 pub fn compare(p1: &Path, p2: &Path) {
     let mut c1 = pcap::Capture::from_file(&p1).unwrap();
     let mut c2 = pcap::Capture::from_file(&p2).unwrap();
-    for i in 0..110 {
-        let p1 = usb::Packet::from_bytes(c1.next().unwrap().data).unwrap();
-        let p2 = usb::Packet::from_bytes(c2.next().unwrap().data).unwrap();
+    for i in 0.. {
+        let (packet1, packet2) = match (c1.next(), c2.next()) {
+            (Ok(p1), Ok(p2)) => (p1, p2),
+            (Err(e), Ok(p2)) => return println!("capture1 is empty, capture2 still has sth ({:?})", e),
+            (Ok(p1), Err(e)) => return println!("capture1 still has sth, capture2 is empty ({:?})", e),
+            (Err(e1), Err(e2)) => return println!("success ({:?}, {:?})", e1, e2),
+
+        };
+        let p1 = usb::Packet::from_bytes(packet1.data).unwrap();
+        let p2 = usb::Packet::from_bytes(packet2.data).unwrap();
         if !p1.same(&p2) {
             println!("Packet {} incorrect", i+1);
-            println!("{:?}", p1);
-            println!("{:?}", p2);
+            println!("{}", format!("{:?}", p1).replace(", ", ",\n").replace("{ ", "{\n"));
+            println!("{}", format!("{:?}", p2).replace(", ", ",\n").replace("{ ", "{\n"));
         }
     }
 }

@@ -6,6 +6,10 @@ use std::time::Duration;
 use std::io;
 use std::io::BufRead;
 use std::u8;
+use std::mem;
+use color::{Color, KeyColor, ColorPacket, FlushPacket};
+use keys::{StandardKey, GamingKey, KeyType};
+use std::str::FromStr;
 
 type SendResult = Result<SendResponse, SendResponseError>;
 type RecvResult = UsbResult<Vec<u8>>;
@@ -116,6 +120,49 @@ impl<'a> Replay<'a> {
         Ok(try!(self.async_group.wait_any()).actual().iter().cloned().collect())
     }
 
+    fn send_color(&mut self, color_packet: ColorPacket) -> UsbResult<()> {
+        let packet: [u8; 64] = unsafe { mem::transmute(color_packet) };
+        let mut buf2 = Vec::new();
+        buf2.resize(64, 0u8);
+        try!(self.send_interrupt(0x82, buf2));
+
+        let mut to_send = Vec::new();
+        to_send.extend_from_slice(&packet);
+        try!(self.send_control(0x80, to_send, 0x21, 9, 0x0212, 0x0001));
+        match self.recv() {
+            Ok(buf) => println!("OK: {:?}", &buf),
+            Err(e) => println!("Err: {}", e)
+        }
+        match self.recv() {
+            Ok(buf) => println!("OK: {:?}", &buf),
+            Err(e) => println!("Err: {}", e)
+        }
+        Ok(())
+    }
+    fn flush_color(&mut self) -> UsbResult<()> {
+        let flush: [u8; 20] = unsafe { mem::transmute(FlushPacket::new()) };
+        let mut buf2 = Vec::new();
+        buf2.resize(64, 0u8);
+        try!(self.send_interrupt(0x82, buf2));
+
+        let mut to_send = Vec::new();
+        to_send.extend_from_slice(&flush);
+        try!(self.send_control(0x80, to_send, 0x21, 9, 0x0212, 0x0001));
+        match self.recv() {
+            Ok(buf) => println!("OK: {:?}", &buf),
+            Err(e) => println!("Err: {}", e)
+        }
+        match self.recv() {
+            Ok(buf) => println!("OK: {:?}", &buf),
+            Err(e) => println!("Err: {}", e)
+        }
+        Ok(())
+    }
+    fn set_color(&mut self, color_packet: ColorPacket) -> UsbResult<()> {
+        try!(self.send_color(color_packet));
+        try!(self.flush_color());
+        Ok(())
+    }
 }
 
 pub struct Control<'a> {
@@ -201,6 +248,12 @@ impl<'a> Control<'a> {
         let res = self.replay.recv();
         self.compare_next(send, res)
     }
+
+    fn listen_iface2(&mut self) -> UsbResult<()> {
+        let mut vec = Vec::new();
+        vec.resize(64, 0u8);
+        self.replay.send_interrupt(0x82, vec)
+    }
     
     pub fn replay_stop<F>(&mut self, mut stop: F) -> UsbResult<()>
             where F: FnMut(&ReplayCompare) -> bool {
@@ -255,20 +308,21 @@ impl<'a> Control<'a> {
         try!(self.replay_stop(move |p| {
             println!("{:?}", p);
             println!("i: {}", i);
-            match i {
-                j if j < 2 && *p == ReplayCompare::Correct(0x0a) => {
-                    i += 1;
-                    false
-                },
-                i if i >= 2 => true,
-                _ => false
+            if *p != ReplayCompare::Correct(0x0a) {
+                i += 1;
+                if i >= 2 {
+                    return true;
+                }
             }
+            false
         }));
         Ok(())
     }
 
     pub fn replay_handshake(&mut self) -> UsbResult<()> {
         try!(self.replay_basic_handshake());
+        // GET DESCRIPTOR HID Report
+        try!(self.replay_compare_next());
         // INTERRUP in iface 2
         let send2 = self.send_next();
 
@@ -284,48 +338,65 @@ impl<'a> Control<'a> {
         Ok(())
     }
 
+    pub fn set_color(&mut self, key_color: KeyColor, key_type: KeyType) -> UsbResult<()> {
+        let mut packet = ColorPacket::new(key_type);
+        packet.add_key_color(key_color).unwrap();
+        self.replay.set_color(packet)
+    }
+
+    pub fn set_all_colors(&mut self, color: Color) -> UsbResult<()> {
+        for chunk in (&StandardKey::values()[..]).chunks(14) {
+            let mut packet = ColorPacket::new_standard();
+            for code in chunk {
+                packet.add_key_color(KeyColor::new_standard(*code, color)).unwrap();
+            }
+            try!(self.replay.send_color(packet));
+        }
+        for chunk in (&GamingKey::values()[..]).chunks(14) {
+            let mut packet = ColorPacket::new_gaming();
+            for code in chunk {
+                packet.add_key_color(KeyColor::new_gaming(*code, color)).unwrap();
+            }
+            try!(self.replay.send_color(packet));
+        }
+        self.replay.flush_color()
+    }
+
     pub fn test(&mut self) -> UsbResult<()> {
         try!(self.replay_basic_handshake());
-        let streams = [
-            "11ff0f4b00040000000000000000000000000000",
-            "12ff0f3b000400090800cdff0900cdff0600cdff0700cdff0400cdff0500cdff0200cdff0300cdff0100cdff0000000000000000000000000000000000000000",
-            "11ff0f4b00100000000000000000000000000000",
-            "11ff0f3b0010000202ff00000100cdff00000000",
-            "11ff0f4b00010000000000000000000000000000",
-            "12ff0f3b0001000e5900cdff5600cdff5700cdff5400cdff5500cdff5200cdff5300cdff5000cdff5100cdffe600cdffe700cdffe400cdffe500cdffe200cdff",
-            "12ff0f3b0001000e6400cdffe300cdff6500cdffe000cdff6200cdffe100cdff6300cdff6000cdff6100cdff0e00cdff8a00cdff0f00cdff8b00cdff0c00cdff",
-            "12ff0f3b0001000e8800cdff0d00cdff8900cdff0a00cdff0b00cdff0800cdff8700cdff0900cdff0600cdff0700cdff0400cdff0500cdff1e00cdff1f00cdff",
-            "12ff0f3b0001000e1c00cdff1d00cdff1a00cdff1b00cdff1800cdff1900cdff1600cdff1700cdff1400cdff1500cdff1200cdff1300cdff1000cdff1100cdff",
-            "12ff0f3b0001000e2e00cdff2f00cdff2cff00002d00cdff2a00cdff2b00cdff2800cdff2900cdff2600cdff2700cdff2400cdff2500cdff2200cdff2300cdff",
-            "12ff0f3b0001000e2000cdff2100cdff3e00cdff3f00cdff3c00cdff3d00cdff3a00cdff3b00cdff3800cdff3900cdff3600cdff3700cdff3400cdff3500cdff",
-            "12ff0f3b0001000e3200cdff3300cdff3000cdff3100cdff4e00cdff4f00cdff4c00cdff4d00cdff4a00cdff4b00cdff4800cdff4900cdff4600cdff4700cdff",
-            "12ff0f3b0001000d4400cdff4500cdff4200cdff4300cdff4000cdff4100cdff5e00cdff5f00cdff5c00cdff5d00cdff5a00cdff5b00cdff5800cdff00000000",
-            "11ff0f5b00000000000000000000000000000000",
-        ];
         self.replay.timeout = Duration::from_secs(1);
-        let mut datas = Vec::new();
-        for s in streams.iter() {
-            let mut buf = Vec::new();
-            for i in 0..s.len()/2 {
-                buf.push(u8::from_str_radix(&s[2*i...2*i+1], 16).unwrap());
+        try!(self.set_all_colors(Color::new(0,0,255)));
+        //let streams = [
+            //"11ff0f4b00040000000000000000000000000000",
+            //"11ff0f4b00100000000000000000000000000000",
+            //"11ff0f3b0010000202ff0000010000ff00000000",
+            //"11ff0f4b00010000000000000000000000000000",
+        //];
+
+        // read colors from stdin and set them
+        let stdin = io::stdin();
+        println!("Reading colors... ");
+        for l in stdin.lock().lines() {
+            let l = l.unwrap();
+            let split: Vec<_> = l.split(" ").collect();
+            let mut key = StandardKey::from_str(split[0]).map(|s| s as u8);
+            let mut key_type = KeyType::Standard;
+            if let Err(_) = key {
+                key = GamingKey::from_str(split[0]).map(|g| g as u8);
+                key_type = KeyType::Gaming;
             }
-            datas.push(buf);
+            let r = u8::from_str(split[1]);
+            let g = u8::from_str(split[2]);
+            let b = u8::from_str(split[3]);
+            match (key, r, g, b) {
+                (Err(e), _, _, _) => println!("Could not parse key: {}", e),
+                (_, Err(e), _, _) => println!("Could not parse red: {}", e),
+                (_, _, Err(e), _) => println!("Could not parse green: {}", e),
+                (_, _, _, Err(e)) => println!("Could not parse blue: {}", e),
+                (Ok(k), Ok(r), Ok(g), Ok(b)) => try!(self.set_color(KeyColor::new(k, Color::new(r, g, b)), key_type))
+            }
         }
-        for data in datas {
-            let mut buf2 = Vec::new();
-            let send2 = self.replay.send_interrupt(0x82, buf2);
-            let mut to_send = Vec::new();
-            to_send.extend_from_slice(&data);
-            self.replay.send_control(0x80, to_send, 0x21, 9, 0x0200 | data[0] as u16, 0x0001);
-            match self.replay.recv() {
-                Ok(buf) => println!("OK: {:?}", &buf),
-                Err(e) => println!("Err: {}", e)
-            }
-            match self.replay.recv() {
-                Ok(buf) => println!("OK: {:?}", &buf),
-                Err(e) => println!("Err: {}", e)
-            }
-        }
+
         Ok(())
     }
 } 
