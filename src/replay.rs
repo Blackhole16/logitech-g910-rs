@@ -6,9 +6,8 @@ use std::time::Duration;
 use std::io;
 use std::io::BufRead;
 use std::u8;
-use std::mem;
-use color::{Color, KeyColor, ColorPacket, FlushPacket};
-use keys::{StandardKey, GamingKey, KeyType};
+use color::*;
+use keys::*;
 use std::str::FromStr;
 
 type SendResult = Result<SendResponse, SendResponseError>;
@@ -121,7 +120,7 @@ impl<'a> Replay<'a> {
     }
 
     fn send_color(&mut self, color_packet: ColorPacket) -> UsbResult<()> {
-        let packet: [u8; 64] = unsafe { mem::transmute(color_packet) };
+        let packet: [u8; 64] = color_packet.into();
         let mut buf2 = Vec::new();
         buf2.resize(64, 0u8);
         try!(self.send_interrupt(0x82, buf2));
@@ -140,7 +139,7 @@ impl<'a> Replay<'a> {
         Ok(())
     }
     fn flush_color(&mut self) -> UsbResult<()> {
-        let flush: [u8; 20] = unsafe { mem::transmute(FlushPacket::new()) };
+        let flush: [u8; 20] = FlushPacket::new().into();
         let mut buf2 = Vec::new();
         buf2.resize(64, 0u8);
         try!(self.send_interrupt(0x82, buf2));
@@ -338,24 +337,31 @@ impl<'a> Control<'a> {
         Ok(())
     }
 
-    pub fn set_color(&mut self, key_color: KeyColor, key_type: KeyType) -> UsbResult<()> {
-        let mut packet = ColorPacket::new(key_type);
+    pub fn set_color(&mut self, key_color: KeyColor) -> UsbResult<()> {
+        let mut packet = ColorPacket::new();
         packet.add_key_color(key_color).unwrap();
         self.replay.set_color(packet)
     }
 
     pub fn set_all_colors(&mut self, color: Color) -> UsbResult<()> {
         for chunk in (&StandardKey::values()[..]).chunks(14) {
-            let mut packet = ColorPacket::new_standard();
+            let mut packet = ColorPacket::new();
             for code in chunk {
-                packet.add_key_color(KeyColor::new_standard(*code, color)).unwrap();
+                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
             }
             try!(self.replay.send_color(packet));
         }
         for chunk in (&GamingKey::values()[..]).chunks(14) {
-            let mut packet = ColorPacket::new_gaming();
+            let mut packet = ColorPacket::new();
             for code in chunk {
-                packet.add_key_color(KeyColor::new_gaming(*code, color)).unwrap();
+                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
+            }
+            try!(self.replay.send_color(packet));
+        }
+        for chunk in (&Logo::values()[..]).chunks(14) {
+            let mut packet = ColorPacket::new();
+            for code in chunk {
+                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
             }
             try!(self.replay.send_color(packet));
         }
@@ -363,9 +369,9 @@ impl<'a> Control<'a> {
     }
 
     pub fn test(&mut self) -> UsbResult<()> {
-        try!(self.replay_basic_handshake());
+        //try!(self.replay_basic_handshake());
         self.replay.timeout = Duration::from_secs(1);
-        try!(self.set_all_colors(Color::new(0,0,255)));
+        try!(self.set_all_colors(Color::new(0,0x65,0xbd)));
         //let streams = [
             //"11ff0f4b00040000000000000000000000000000",
             //"11ff0f4b00100000000000000000000000000000",
@@ -379,12 +385,13 @@ impl<'a> Control<'a> {
         for l in stdin.lock().lines() {
             let l = l.unwrap();
             let split: Vec<_> = l.split(" ").collect();
-            let mut key = StandardKey::from_str(split[0]).map(|s| s as u8);
-            let mut key_type = KeyType::Standard;
-            if let Err(_) = key {
-                key = GamingKey::from_str(split[0]).map(|g| g as u8);
-                key_type = KeyType::Gaming;
-            }
+            let key = StandardKey::from_str(split[0])
+                .map(|standard| Key::Standard(standard))
+                .or_else(|_| GamingKey::from_str(split[0])
+                    .map(|gaming| Key::Gaming(gaming))
+                ).or_else(|_| Logo::from_str(split[0])
+                    .map(|logo| Key::Logo(logo))
+                );
             let r = u8::from_str(split[1]);
             let g = u8::from_str(split[2]);
             let b = u8::from_str(split[3]);
@@ -393,7 +400,7 @@ impl<'a> Control<'a> {
                 (_, Err(e), _, _) => println!("Could not parse red: {}", e),
                 (_, _, Err(e), _) => println!("Could not parse green: {}", e),
                 (_, _, _, Err(e)) => println!("Could not parse blue: {}", e),
-                (Ok(k), Ok(r), Ok(g), Ok(b)) => try!(self.set_color(KeyColor::new(k, Color::new(r, g, b)), key_type))
+                (Ok(k), Ok(r), Ok(g), Ok(b)) => try!(self.set_color(KeyColor::new(k, Color::new(r, g, b))))
             }
         }
 

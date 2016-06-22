@@ -1,4 +1,6 @@
 // http://blog.jwilm.io/racerd/clap/macro.arg_enum!.html
+// modified to support value assignment and repr
+// values() function added returning a vec of all variants
 macro_rules! arg_enum {
     (#[repr($($r:ident),+)] #[derive($($d:ident),+)] pub enum $e:ident { $($v:ident = $val:expr),+ } ) => {
         #[repr($($r,)+)]
@@ -39,12 +41,39 @@ macro_rules! arg_enum {
     };
 }
 
-#[repr(u8)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Key {
+    Standard(StandardKey),
+    Gaming(GamingKey),
+    Logo(Logo),
+}
+
+impl<'a> From<&'a Key> for KeyType {
+    fn from(key: &Key) -> KeyType {
+        match key {
+            &Key::Standard(_) => KeyType::Standard,
+            &Key::Gaming(_) => KeyType::Gaming,
+            &Key::Logo(_) => KeyType::Logo,
+        }
+    }
+}
+
+impl Into<u8> for Key {
+    fn into(self) -> u8 {
+        match self {
+            Key::Standard(s) => s as u8,
+            Key::Gaming(g) => g as u8,
+            Key::Logo(m) => m as u8,
+        }
+    }
+}
+
+#[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyType {
-   Standard = 0x01,
-   Gaming = 0x04,
-   Memory = 0x10,
+    Standard = 0x0001,
+    Gaming = 0x0004,
+    Logo = 0x0010,
 }
 
 arg_enum! {
@@ -150,6 +179,12 @@ arg_enum! {
         NumComma = 0x63,
         SmallerThan = 0x64,
         Menu = 0x65,
+        International1 = 0x87,
+        // gets mapped to 0x87 in firmware
+        International2 = 0x88,
+        International3 = 0x89,
+        International4 = 0x8a,
+        International5 = 0x8b,
         LeftControl = 0xe0,
         LeftShift = 0xe1,
         LeftAlt = 0xe2,
@@ -161,9 +196,15 @@ arg_enum! {
     }
 }
 
+impl From<StandardKey> for Key {
+    fn from(standard: StandardKey) -> Key {
+        Key::Standard(standard)
+    }
+}
+
 arg_enum! {
     #[repr(u8)]
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum GamingKey {
         None = 0x00,
         G1 = 0x01,
@@ -175,5 +216,27 @@ arg_enum! {
         G7 = 0x07,
         G8 = 0x08,
         G9 = 0x09
+    }
+}
+
+impl From<GamingKey> for Key {
+    fn from(gaming: GamingKey) -> Key {
+        Key::Gaming(gaming)
+    }
+}
+
+arg_enum! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Logo {
+        None = 0x00,
+        G = 0x01,
+        G910 = 0x02
+    }
+}
+
+impl From<Logo> for Key {
+    fn from(logo: Logo) -> Key {
+        Key::Logo(logo)
     }
 }

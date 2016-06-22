@@ -2,6 +2,7 @@
 
 extern crate libusb;
 extern crate pcap;
+extern crate byteorder;
 
 mod consts;
 mod print;
@@ -15,6 +16,8 @@ use std::path::Path;
 use replay::Control;
 
 fn main() {
+    utils::print_memory_layout();
+    //return;
     //let p = Path::new("pcap/g910/handshake/handshake2.pcap");
     //utils::print_all_data(&p);
     //return;

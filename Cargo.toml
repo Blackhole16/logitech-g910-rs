@@ -7,4 +7,5 @@ authors = ["Blackhole16 <jaro.fietz@gmx.de>"]
 #libusb = { git = "https://github.com/kevinmehall/libusb-rs", rev = "async" }
 libusb = { path = "../libusb-rs" }
 pcap = "0.5.5"
+byteorder = "*"
 
