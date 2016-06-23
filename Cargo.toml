@@ -1,11 +1,10 @@
 [package]
 name = "usbtest"
 version = "0.1.0"
-authors = ["Blackhole16 <jaro.fietz@gmx.de>"]
+authors = ["oberien <jaro.fietz@gmx.de>"]
 
 [dependencies]
-#libusb = { git = "https://github.com/kevinmehall/libusb-rs", rev = "async" }
-libusb = { path = "../libusb-rs" }
+libusb = { git = "https://github.com/oberien/libusb-rs", rev = "42c5d506cb2389b9e55d01ec4df3bb6591a816f0" }
+g910 = { git = "https://github.com/oberien/logitech-g910-rs", rev = "master" }
 pcap = "0.5.5"
-byteorder = "*"
 

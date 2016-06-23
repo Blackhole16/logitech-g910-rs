@@ -14,7 +14,7 @@ use std::fmt::Display;
 use std::path::Path;
 use pcap;
 use usb;
-use keys::*;
+use g910::*;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -39,38 +39,6 @@ impl<T> PrintResult for Result<T> where T: Display {
   }
 }
 
-pub fn get_context() -> Context {
-    let mut context = match Context::new() {
-        Ok(c) => c,
-        Err(e) => panic!("Context::new(): {}", e)
-    };
-    context.set_log_level(LogLevel::Debug);
-    context.set_log_level(LogLevel::Info);
-    context.set_log_level(LogLevel::Warning);
-    context.set_log_level(LogLevel::Error);
-    context.set_log_level(LogLevel::None);
-    return context;
-}
-
-pub fn open_device(context: &Context, vendor_id: u16, product_id: u16) -> Result<(Device, DeviceDescriptor, DeviceHandle)> {
-    let devices = match context.devices() {
-        Ok(devices) => devices,
-        Err(e) => return Err(e),
-    };
-    for d in devices.iter() {
-        let dd = match d.device_descriptor() {
-            Ok(dd) => dd,
-            Err(_) => continue
-        };
-        if dd.vendor_id() == vendor_id && dd.product_id() == product_id  {
-            return match d.open() {
-                Ok(handle) => Ok((d, dd, handle)),
-                Err(e) => Err(e),
-            }
-        }
-    }
-    return Err(Error::NoDevice);
-}
 
 #[allow(unused)]
 pub fn read_device(device: &mut Device, device_desc: &DeviceDescriptor, handle: &mut DeviceHandle) -> Result<()> {

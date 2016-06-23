@@ -6,9 +6,8 @@ use std::time::Duration;
 use std::io;
 use std::io::BufRead;
 use std::u8;
-use color::*;
-use keys::*;
 use std::str::FromStr;
+use g910::*;
 
 type SendResult = Result<SendResponse, SendResponseError>;
 type RecvResult = UsbResult<Vec<u8>>;
@@ -337,72 +336,41 @@ impl<'a> Control<'a> {
         Ok(())
     }
 
-    pub fn set_color(&mut self, key_color: KeyColor) -> UsbResult<()> {
-        let mut packet = ColorPacket::new();
-        packet.add_key_color(key_color).unwrap();
-        self.replay.set_color(packet)
-    }
-
-    pub fn set_all_colors(&mut self, color: Color) -> UsbResult<()> {
-        for chunk in (&StandardKey::values()[..]).chunks(14) {
-            let mut packet = ColorPacket::new();
-            for code in chunk {
-                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
-            }
-            try!(self.replay.send_color(packet));
-        }
-        for chunk in (&GamingKey::values()[..]).chunks(14) {
-            let mut packet = ColorPacket::new();
-            for code in chunk {
-                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
-            }
-            try!(self.replay.send_color(packet));
-        }
-        for chunk in (&Logo::values()[..]).chunks(14) {
-            let mut packet = ColorPacket::new();
-            for code in chunk {
-                packet.add_key_color(KeyColor::new(*code, color)).unwrap();
-            }
-            try!(self.replay.send_color(packet));
-        }
-        self.replay.flush_color()
-    }
-
     pub fn test(&mut self) -> UsbResult<()> {
-        //try!(self.replay_basic_handshake());
-        self.replay.timeout = Duration::from_secs(1);
-        try!(self.set_all_colors(Color::new(0,0x65,0xbd)));
-        //let streams = [
-            //"11ff0f4b00040000000000000000000000000000",
-            //"11ff0f4b00100000000000000000000000000000",
-            //"11ff0f3b0010000202ff0000010000ff00000000",
-            //"11ff0f4b00010000000000000000000000000000",
-        //];
+        ////try!(self.replay_basic_handshake());
+        //self.replay.timeout = Duration::from_secs(1);
+        //try!(self.set_all_colors(Color::new(0,0x65,0xbd)));
+        ////let streams = [
+            ////"11ff0f4b00040000000000000000000000000000",
+            ////"11ff0f4b00100000000000000000000000000000",
+            ////"11ff0f3b0010000202ff0000010000ff00000000",
+            ////"11ff0f4b00010000000000000000000000000000",
+        ////];
 
-        // read colors from stdin and set them
-        let stdin = io::stdin();
-        println!("Reading colors... ");
-        for l in stdin.lock().lines() {
-            let l = l.unwrap();
-            let split: Vec<_> = l.split(" ").collect();
-            let key = StandardKey::from_str(split[0])
-                .map(|standard| Key::Standard(standard))
-                .or_else(|_| GamingKey::from_str(split[0])
-                    .map(|gaming| Key::Gaming(gaming))
-                ).or_else(|_| Logo::from_str(split[0])
-                    .map(|logo| Key::Logo(logo))
-                );
-            let r = u8::from_str(split[1]);
-            let g = u8::from_str(split[2]);
-            let b = u8::from_str(split[3]);
-            match (key, r, g, b) {
-                (Err(e), _, _, _) => println!("Could not parse key: {}", e),
-                (_, Err(e), _, _) => println!("Could not parse red: {}", e),
-                (_, _, Err(e), _) => println!("Could not parse green: {}", e),
-                (_, _, _, Err(e)) => println!("Could not parse blue: {}", e),
-                (Ok(k), Ok(r), Ok(g), Ok(b)) => try!(self.set_color(KeyColor::new(k, Color::new(r, g, b))))
-            }
-        }
+        //// read colors from stdin and set them
+        //let stdin = io::stdin();
+        //println!("Reading colors... ");
+        //for l in stdin.lock().lines() {
+            //let l = l.unwrap();
+            //let split: Vec<_> = l.split(" ").collect();
+            //let key = StandardKey::from_str(split[0])
+                //.map(|standard| Key::Standard(standard))
+                //.or_else(|_| GamingKey::from_str(split[0])
+                    //.map(|gaming| Key::Gaming(gaming))
+                //).or_else(|_| Logo::from_str(split[0])
+                    //.map(|logo| Key::Logo(logo))
+                //);
+            //let r = u8::from_str(split[1]);
+            //let g = u8::from_str(split[2]);
+            //let b = u8::from_str(split[3]);
+            //match (key, r, g, b) {
+                //(Err(e), _, _, _) => println!("Could not parse key: {}", e),
+                //(_, Err(e), _, _) => println!("Could not parse red: {}", e),
+                //(_, _, Err(e), _) => println!("Could not parse green: {}", e),
+                //(_, _, _, Err(e)) => println!("Could not parse blue: {}", e),
+                //(Ok(k), Ok(r), Ok(g), Ok(b)) => try!(self.set_color(KeyColor::new(k, Color::new(r, g, b))))
+            //}
+        //}
 
         Ok(())
     }

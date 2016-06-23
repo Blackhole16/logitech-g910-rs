@@ -2,8 +2,8 @@
 name = "usbtest"
 version = "0.1.0"
 dependencies = [
- "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "libusb 0.2.2",
+ "g910 0.1.0 (git+https://github.com/oberien/logitech-g910-rs?rev=master)",
+ "libusb 0.2.2 (git+https://github.com/oberien/libusb-rs?rev=42c5d506cb2389b9e55d01ec4df3bb6591a816f0)",
  "pcap 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -26,6 +26,15 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "g910"
+version = "0.1.0"
+source = "git+https://github.com/oberien/logitech-g910-rs?rev=master#9c5921052eca0201639820ae4f4f4f4266c18c99"
+dependencies = [
+ "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libusb 0.2.2 (git+https://github.com/oberien/libusb-rs?rev=42c5d506cb2389b9e55d01ec4df3bb6591a816f0)",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -33,6 +42,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libusb"
 version = "0.2.2"
+source = "git+https://github.com/oberien/libusb-rs?rev=42c5d506cb2389b9e55d01ec4df3bb6591a816f0#42c5d506cb2389b9e55d01ec4df3bb6591a816f0"
 dependencies = [
  "bit-set 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
