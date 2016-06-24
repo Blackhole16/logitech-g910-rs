@@ -12,10 +12,10 @@ mod test;
 use std::path::Path;
 use replay::Control;
 
-use g910::{Keyboard, Color, KeyEvent};
+use g910::{Keyboard, Color, KeyEvent, KeyboardImpl, FlashHandler};
 
 fn main() {
-    test::print_memory_layout();
+    //test::print_memory_layout();
     //return;
     //let p = Path::new("pcap/g910/handshake/handshake2.pcap");
     //test::print_all_data(&p);
@@ -28,21 +28,10 @@ fn main() {
     
     let context = g910::get_context();
     let mut handle = g910::get_handle(&context).unwrap();
-    let mut keyboard = Keyboard::new(&context, &*handle).unwrap();
-    keyboard.set_all_colors(Color::new(255, 0, 0));
-    keyboard.handle(|evt, keyboard| {
-        match evt {
-            KeyEvent::KeyPressed(k) => {
-                println!("Key pressed: {:?}", k);
-                keyboard.set_all_colors(Color::new(255, 0, 0));
-            },
-            KeyEvent::KeyReleased(k) => {
-                println!("Key released: {:?}", k);
-                keyboard.set_all_colors(Color::new(0, 0, 255));
-            },
-        }
-        return true;
-    });
+    let mut keyboard = KeyboardImpl::new(&context, &*handle).unwrap();
+    keyboard.set_all_colors(Color::new(0, 0, 255));
+    keyboard.add_handler(FlashHandler::new().into());
+    keyboard.start_handle_loop();
     return;
 
 
