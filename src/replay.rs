@@ -117,50 +117,6 @@ impl<'a> Replay<'a> {
     fn recv(&mut self) -> RecvResult {
         Ok(try!(self.async_group.wait_any()).actual().iter().cloned().collect())
     }
-
-    fn send_color(&mut self, color_packet: ColorPacket) -> UsbResult<()> {
-        let packet: [u8; 64] = color_packet.into();
-        let mut buf2 = Vec::new();
-        buf2.resize(64, 0u8);
-        try!(self.send_interrupt(0x82, buf2));
-
-        let mut to_send = Vec::new();
-        to_send.extend_from_slice(&packet);
-        try!(self.send_control(0x80, to_send, 0x21, 9, 0x0212, 0x0001));
-        match self.recv() {
-            Ok(buf) => println!("OK: {:?}", &buf),
-            Err(e) => println!("Err: {}", e)
-        }
-        match self.recv() {
-            Ok(buf) => println!("OK: {:?}", &buf),
-            Err(e) => println!("Err: {}", e)
-        }
-        Ok(())
-    }
-    fn flush_color(&mut self) -> UsbResult<()> {
-        let flush: [u8; 20] = FlushPacket::new().into();
-        let mut buf2 = Vec::new();
-        buf2.resize(64, 0u8);
-        try!(self.send_interrupt(0x82, buf2));
-
-        let mut to_send = Vec::new();
-        to_send.extend_from_slice(&flush);
-        try!(self.send_control(0x80, to_send, 0x21, 9, 0x0212, 0x0001));
-        match self.recv() {
-            Ok(buf) => println!("OK: {:?}", &buf),
-            Err(e) => println!("Err: {}", e)
-        }
-        match self.recv() {
-            Ok(buf) => println!("OK: {:?}", &buf),
-            Err(e) => println!("Err: {}", e)
-        }
-        Ok(())
-    }
-    fn set_color(&mut self, color_packet: ColorPacket) -> UsbResult<()> {
-        try!(self.send_color(color_packet));
-        try!(self.flush_color());
-        Ok(())
-    }
 }
 
 pub struct Control<'a> {

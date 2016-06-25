@@ -12,7 +12,7 @@ mod test;
 use std::path::Path;
 use replay::Control;
 
-use g910::{Keyboard, Color, KeyEvent, KeyboardImpl, FlashHandler};
+use g910::{Keyboard, Color, KeyEvent, KeyboardImpl, HeatmapHandler};
 
 fn main() {
     //test::print_memory_layout();
@@ -29,9 +29,8 @@ fn main() {
     let context = g910::get_context();
     let mut handle = g910::get_handle(&context).unwrap();
     let mut keyboard = KeyboardImpl::new(&context, &*handle).unwrap();
-    keyboard.set_all_colors(Color::new(0, 0, 255));
-    keyboard.add_handler(FlashHandler::new().into());
-    keyboard.start_handle_loop();
+    keyboard.add_handler(HeatmapHandler::new().into()).unwrap();
+    keyboard.start_handle_loop().unwrap();
     return;
 
 

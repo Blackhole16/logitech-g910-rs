@@ -28,7 +28,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "g910"
 version = "0.1.0"
-source = "git+https://github.com/oberien/logitech-g910-rs?rev=master#f8e391a0d401a92d64058030851c35234b73d42d"
+source = "git+https://github.com/oberien/logitech-g910-rs?rev=master#a6e18fc05bd319000f44333ee55827ae7ee4655c"
 dependencies = [
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "libusb 0.2.2 (git+https://github.com/oberien/libusb-rs?rev=881d54ef4ffa639132ac42d0cdc6fe3a97135a49)",
