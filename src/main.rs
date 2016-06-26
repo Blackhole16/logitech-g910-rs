@@ -3,6 +3,7 @@
 extern crate libusb;
 extern crate pcap;
 extern crate g910;
+extern crate g910_handler;
 
 mod print;
 mod replay;
@@ -12,7 +13,8 @@ mod test;
 use std::path::Path;
 use replay::Control;
 
-use g910::{Keyboard, Color, KeyEvent, KeyboardImpl, HeatmapHandler};
+use g910::{Keyboard, Color, KeyEvent, KeyboardImpl};
+use g910_handler::{HeatmapHandler, UinputHandler};
 
 fn main() {
     //test::print_memory_layout();
@@ -30,6 +32,7 @@ fn main() {
     let mut handle = g910::get_handle(&context).unwrap();
     let mut keyboard = KeyboardImpl::new(&context, &*handle).unwrap();
     keyboard.add_handler(HeatmapHandler::new().into()).unwrap();
+    keyboard.add_handler(UinputHandler::new().into()).unwrap();
     keyboard.start_handle_loop().unwrap();
     return;
 
