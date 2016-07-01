@@ -201,11 +201,19 @@ pub fn print_all_data(p: &Path) {
     let mut c = pcap::Capture::from_file(p).unwrap();
     while let Ok(pa) = c.next() {
         let packet = usb::Packet::from_bytes(pa.data).unwrap();
-        if packet.get_direction() == usb::Direction::Out
-                && packet.get_data_length() != 0
-                && packet.get_endpoint() == 0
-                && packet.get_data()[0] == 0x12 {
-            println!("{:?}", packet.get_data().iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>());
+        if packet.get_data_length() != 0
+                //&& packet.get_direction() == usb::Direction::Out
+                //&& packet.get_endpoint() == 0
+                //&& packet.get_data()[0] == 0x12
+        {
+            if packet.get_direction() == usb::Direction::Out {
+                println!("IN:  {:?}", packet.get_data().iter()
+                         .map(|b| format!("{:02x}", b)).fold(String::new(), |o,n| o+&n));
+            }
+            if packet.get_direction() == usb::Direction::In {
+                println!("OUT: {:?}", packet.get_data().iter()
+                         .map(|b| format!("{:02x}", b)).fold(String::new(), |o,n| o+&n));
+            }
         }
     }
 }
@@ -340,6 +348,9 @@ pub fn print_memory_layout() {
         memory[r] = key as u8;
         memory[g] = key as u8;
         memory[b] = key as u8;
+    }
+    for (i, m) in memory.iter().enumerate() {
+        println!("{}: {}", i, m);
     }
     for c in (&memory[42..282]).chunks(10) {
         println!("{:02x}, {:02x}, {:02x}, {:02x}, {:02x}", c[1], c[3], c[5], c[7], c[9]);

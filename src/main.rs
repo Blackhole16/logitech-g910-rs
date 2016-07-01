@@ -14,7 +14,7 @@ use std::path::Path;
 use replay::Control;
 
 use g910::{Keyboard, Color, KeyEvent, KeyboardImpl};
-use g910_handler::{HeatmapHandler, UinputHandler};
+use g910_handler::{HeatmapHandler, UinputHandler, FlashHandler};
 
 fn main() {
     //test::print_memory_layout();
@@ -31,8 +31,9 @@ fn main() {
     let context = g910::get_context();
     let mut handle = g910::get_handle(&context).unwrap();
     let mut keyboard = KeyboardImpl::new(&context, &*handle).unwrap();
-    keyboard.add_handler(HeatmapHandler::new().into()).unwrap();
-    keyboard.add_handler(UinputHandler::new().into()).unwrap();
+    keyboard.add_handler(HeatmapHandler::new().into());
+    //keyboard.add_handler(FlashHandler::new().into());
+    keyboard.add_handler(UinputHandler::new().into());
     keyboard.start_handle_loop().unwrap();
     return;
 
