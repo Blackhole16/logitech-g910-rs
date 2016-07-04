@@ -14,7 +14,7 @@ use std::path::Path;
 use replay::Control;
 
 use g910::{Keyboard, Color, KeyEvent, KeyboardImpl};
-use g910_handler::{HeatmapHandler, UinputHandler, FlashHandler};
+use g910_handler::{HeatmapHandler, UinputHandler, FlashHandler, Snake};
 
 fn main() {
     //test::print_memory_layout();
@@ -28,24 +28,23 @@ fn main() {
     //test::compare(&p1, &p2);
     //return;
     
-    let context = g910::get_context();
-    let mut handle = g910::get_handle(&context).unwrap();
-    let mut keyboard = KeyboardImpl::new(&context, &*handle).unwrap();
+    let mut keyboard = KeyboardImpl::new().unwrap();
     keyboard.add_handler(HeatmapHandler::new().into());
-    //keyboard.add_handler(FlashHandler::new().into());
     keyboard.add_handler(UinputHandler::new().into());
+    //keyboard.add_handler(FlashHandler::new().into());
+    //keyboard.add_handler(Snake::new().into());
     keyboard.start_handle_loop().unwrap();
     return;
 
 
-    let p = Path::new("pcap/g910/handshake/handshake.pcap");
+    //let p = Path::new("pcap/g910/handshake/handshake.pcap");
 
-    {
-        let mut ctrl = Control::new(&p, &context, &*handle);
-        // first 6 packets are from wireshark
-        ctrl.skip(6);
-        ctrl.test().unwrap();
-        ctrl.replay_handshake().unwrap();
-    }
+    //{
+        //let mut ctrl = Control::new(&p, &context, &*handle);
+        //// first 6 packets are from wireshark
+        //ctrl.skip(6);
+        //ctrl.test().unwrap();
+        //ctrl.replay_handshake().unwrap();
+    //}
 }
 
